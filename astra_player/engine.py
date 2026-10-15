@@ -1,4 +1,4 @@
-"""Playback engine: a GStreamer playbin with Kiln's video and audio filter chains.
+"""Playback engine: a GStreamer playbin with Astra's video and audio filter chains.
 
 Video: decoder -> playsink subtitle overlay -> video-sink bin
        [glupload ! glcolorconvert ! glcolorbalance ! glvideoflip ! glshader ! glsinkbin(gtk4paintablesink)]
@@ -104,7 +104,7 @@ class Engine(GObject.Object):
 
     def __init__(self):
         super().__init__()
-        self.playbin = _make("playbin", "kiln")
+        self.playbin = _make("playbin", "astra")
         self.playbin.set_property("flags", DEFAULT_FLAGS)
 
         self.gtksink = _make("gtk4paintablesink")
@@ -124,7 +124,7 @@ class Engine(GObject.Object):
             # memory": the subtitle overlay in front of the sink cannot read DMABuf.
             sysmem = _make("capsfilter")
             sysmem.set_property("caps", Gst.Caps.from_string("video/x-raw"))
-            sink = _chain_bin("kiln-video-sink", [
+            sink = _chain_bin("astra-video-sink", [
                 sysmem, _make("glupload"), _make("glcolorconvert"), _gl_rgba_caps(),
                 self.balance, self.flip, self.shader, glsink,
             ])
@@ -134,14 +134,14 @@ class Engine(GObject.Object):
             self.balance = _make("videobalance")
             self.flip = _make("videoflip")
             self.shader = None
-            vfilter = _chain_bin("kiln-video", [self.balance, self.flip, _make("videoconvert")])
+            vfilter = _chain_bin("astra-video", [self.balance, self.flip, _make("videoconvert")])
         Gst.util_set_object_arg(self.flip, "method", "automatic")
         self.playbin.set_property("video-sink", sink)
         if vfilter is not None:
             self.playbin.set_property("video-filter", vfilter)
 
         self.equalizer = _make("equalizer-10bands")
-        afilter = _chain_bin("kiln-audio", [
+        afilter = _chain_bin("astra-audio", [
             _make("scaletempo"), _make("audioconvert"), self.equalizer, _make("audioconvert"),
         ])
         self.playbin.set_property("audio-filter", afilter)

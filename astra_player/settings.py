@@ -2,9 +2,12 @@
 
 import json
 import os
+import shutil
 from pathlib import Path
 
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "kiln-player"
+CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+CONFIG_DIR = CONFIG_HOME / "astra-player"
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
 RESUME_FILE = CONFIG_DIR / "resume.json"
 
@@ -17,7 +20,7 @@ DEFAULTS = {
     "auto_load_subtitles": True,
     "auto_add_folder": True,
     "subtitle_font": "Sans Bold 24",
-    "screenshot_dir": str(Path.home() / "Pictures" / "Kiln Player"),
+    "screenshot_dir": str(Path.home() / "Pictures" / "Astra Player"),
     "seek_short": 5,
     "seek_long": 30,
     "hardware_decoding": True,
@@ -31,6 +34,26 @@ DEFAULTS = {
     "whisper_translate": False,
     "whisper_gpu": False,
 }
+
+# The app was called Kiln Player before 1.2.0.
+LEGACY_NAME = "kiln-player"
+
+
+def migrate_legacy():
+    """Carry settings, resume points and Whisper models over from Kiln Player, once."""
+    old_cfg = CONFIG_HOME / LEGACY_NAME
+    if old_cfg.is_dir() and not CONFIG_DIR.exists():
+        try:
+            shutil.copytree(old_cfg, CONFIG_DIR)
+        except OSError:
+            pass
+    old_data, new_data = DATA_HOME / LEGACY_NAME, DATA_HOME / "astra-player"
+    if old_data.is_dir() and not new_data.exists():
+        try:
+            old_data.rename(new_data)  # models are large; move instead of copying
+        except OSError:
+            pass
+
 
 MAX_RECENT = 20
 MAX_RESUME = 300
@@ -57,6 +80,7 @@ def _save(path, data):
 
 class Settings:
     def __init__(self):
+        migrate_legacy()
         self.data = dict(DEFAULTS)
         stored = _load(SETTINGS_FILE, {})
         if isinstance(stored, dict):

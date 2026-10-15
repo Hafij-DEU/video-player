@@ -31,7 +31,7 @@ from gi.repository import Gst  # noqa: E402
 
 from .playlist import uri_to_path  # noqa: E402
 
-DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "kiln-player"
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "astra-player"
 MODELS_DIR = DATA_DIR / "models"
 SUBS_DIR = DATA_DIR / "subtitles"
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin"
@@ -104,7 +104,7 @@ def download_model(name, progress=None, cancel=None):
     part = dest.with_suffix(".part")
     digest = hashlib.sha256()
     done = 0
-    req = urllib.request.Request(MODEL_URL.format(name), headers={"User-Agent": "kiln-player"})
+    req = urllib.request.Request(MODEL_URL.format(name), headers={"User-Agent": "astra-player"})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp, open(part, "wb") as out:
             while chunk := resp.read(1 << 16):
@@ -313,7 +313,7 @@ def transcribe(wav, model, language="auto", translate=False, gpu=False, threads=
     total = wav_duration(wav) or 1.0
 
     if backend[0] == "cli":
-        with tempfile.TemporaryDirectory(prefix="kiln-whisper-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="astra-whisper-") as tmp:
             base = Path(tmp) / "out"
             cmd = [backend[1], "-m", str(model), "-f", str(wav), "-l", language, "-t", str(threads),
                    "-mc", "0", "-pp", "-osrt", "-of", str(base)]
@@ -366,7 +366,7 @@ def generate(uri, out_path, model, language="auto", translate=False, gpu=False, 
              duration=None, backend=None, progress=None, cancel=None):
     """Extract audio, transcribe it and write ``out_path``. ``progress(stage, fraction)``."""
     report = progress or (lambda _s, _f: None)
-    with tempfile.TemporaryDirectory(prefix="kiln-whisper-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="astra-whisper-") as tmp:
         wav = Path(tmp) / "audio.wav"
         report("extract", 0.0)
         extract_audio(uri, wav, track, duration, lambda f: report("extract", f), cancel)

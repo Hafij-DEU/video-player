@@ -48,7 +48,7 @@ def _resolve_ytdlp(uri):
 
 class PlayerWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Kiln Player", default_width=1100, default_height=660)
+        super().__init__(application=app, title="Astra Player", default_width=1100, default_height=660)
         self.app = app
         self.settings = app.settings
         self.engine = Engine()
@@ -91,7 +91,7 @@ class PlayerWindow(Adw.ApplicationWindow):
     # =================================================================== UI
 
     def _build_ui(self):
-        self.title_widget = Adw.WindowTitle(title="Kiln Player", subtitle="")
+        self.title_widget = Adw.WindowTitle(title="Astra Player", subtitle="")
         header = Adw.HeaderBar(title_widget=self.title_widget)
         open_btn = Adw.SplitButton(icon_name="document-open-symbolic", tooltip_text="Open files (Ctrl+O)",
                                    menu_model=self.open_menu)
@@ -109,9 +109,9 @@ class PlayerWindow(Adw.ApplicationWindow):
 
         idle = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10,
                        halign=Gtk.Align.CENTER, valign=Gtk.Align.CENTER)
-        idle.append(Gtk.Image(icon_name="io.github.hafij.KilnPlayer", pixel_size=128,
+        idle.append(Gtk.Image(icon_name="io.github.hafij.AstraPlayer", pixel_size=128,
                               css_classes=["idle-logo"]))
-        idle.append(Gtk.Label(label="Kiln Player", css_classes=["idle-title"]))
+        idle.append(Gtk.Label(label="Astra Player", css_classes=["idle-title"]))
         idle.append(Gtk.Label(label="Drop media here, or press Ctrl+O to open files",
                               css_classes=["idle-hint"]))
 
@@ -353,7 +353,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec = Gio.Menu()
         sec.append("Preferences", "win.preferences")
         sec.append("Keyboard shortcuts", "win.shortcuts")
-        sec.append("About Kiln Player", "app.about")
+        sec.append("About Astra Player", "app.about")
         sec.append("Quit", "app.quit")
         self.main_menu.append_section(None, sec)
 
@@ -759,7 +759,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._refresh_playlist()
         self.title_widget.set_title(entry.title)
         self.title_widget.set_subtitle(f"{idx + 1} / {len(self.playlist)}")
-        self.set_title(f"{entry.title} - Kiln Player")
+        self.set_title(f"{entry.title} - Astra Player")
         self.audio_title.set_label(entry.title)
         self.audio_sub.set_label("")
         self.engine.subtitle_delay = 0
@@ -974,7 +974,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.stop()
         self.playlist.clear()
         self._refresh_playlist()
-        self.title_widget.set_title("Kiln Player")
+        self.title_widget.set_title("Astra Player")
         self.title_widget.set_subtitle("")
 
     def _playlist_sort(self):

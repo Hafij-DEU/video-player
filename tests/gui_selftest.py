@@ -1,4 +1,4 @@
-"""End-to-end smoke test: drives a real Kiln Player window.
+"""End-to-end smoke test: drives a real Astra Player window.
 
 Run under a private X server, for example:
     Xvfb :77 -screen 0 1280x800x24 &  DISPLAY=:77 GDK_BACKEND=x11 python3 tests/gui_selftest.py
@@ -13,19 +13,19 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp(prefix="kiln-cfg-"))
+os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp(prefix="astra-cfg-"))
 
 from gi.repository import GLib  # noqa: E402
 
-from kiln_player import whisper  # noqa: E402
-from kiln_player.app import KilnApp  # noqa: E402
-from kiln_player.playlist import path_to_uri  # noqa: E402
-from kiln_player.shaders import SHADERS  # noqa: E402
+from astra_player import whisper  # noqa: E402
+from astra_player.app import AstraApp  # noqa: E402
+from astra_player.playlist import path_to_uri  # noqa: E402
+from astra_player.shaders import SHADERS  # noqa: E402
 
-MEDIA = Path(tempfile.mkdtemp(prefix="kiln-media-"))
+MEDIA = Path(tempfile.mkdtemp(prefix="astra-media-"))
 FF = ["ffmpeg", "-v", "error", "-y"]
-# Spoken English sample from Ubuntu's whisper.cpp package (or KILN_SPEECH_WAV).
-SPEECH_WAV = next((p for p in (os.environ.get("KILN_SPEECH_WAV", ""),
+# Spoken English sample from Ubuntu's whisper.cpp package (or ASTRA_SPEECH_WAV).
+SPEECH_WAV = next((p for p in (os.environ.get("ASTRA_SPEECH_WAV", ""),
                                "/usr/share/sounds/debian/samples/en-Wikipedia-Ignore_All_Rules.wav")
                    if p and Path(p).is_file()), None)
 
@@ -46,7 +46,7 @@ def make_media():
                          "-c:a", "ac3", "-x265-params", "log-level=error",
                          str(MEDIA / "b_hevc.mp4")], check=True)
     subprocess.run(FF + ["-f", "lavfi", "-i", "sine=frequency=500:sample_rate=44100", "-t", "5",
-                         "-metadata", "title=Test Tone", "-metadata", "artist=Kiln",
+                         "-metadata", "title=Test Tone", "-metadata", "artist=Astra",
                          str(MEDIA / "c_song.flac")], check=True)
 
 
@@ -236,7 +236,7 @@ def whisper_checks(win):
 
 def main():
     make_media()
-    app = KilnApp()
+    app = AstraApp()
     app.exit_code = 1
 
     def on_activate(a):

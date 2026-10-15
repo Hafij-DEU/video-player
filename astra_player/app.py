@@ -15,11 +15,11 @@ from . import __version__  # noqa: E402
 from .engine import set_hardware_decoding  # noqa: E402
 from .settings import Settings  # noqa: E402
 
-APP_ID = "io.github.hafij.KilnPlayer"
+APP_ID = "io.github.hafij.AstraPlayer"
 HERE = Path(__file__).resolve().parent
 
 
-class KilnApp(Adw.Application):
+class AstraApp(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID,
                          flags=Gio.ApplicationFlags.HANDLES_OPEN | Gio.ApplicationFlags.NON_UNIQUE
@@ -27,7 +27,7 @@ class KilnApp(Adw.Application):
         self.settings = None
         self.window = None
         self.mpris = None
-        GLib.set_application_name("Kiln Player")
+        GLib.set_application_name("Astra Player")
 
     def do_startup(self):
         Adw.Application.do_startup(self)
@@ -57,7 +57,7 @@ class KilnApp(Adw.Application):
                 from .mpris import Mpris
                 self.mpris = Mpris(self, self.window)
             except Exception as exc:  # MPRIS is optional; never block playback on it
-                print(f"kiln-player: MPRIS disabled: {exc}", file=sys.stderr)
+                print(f"astra-player: MPRIS disabled: {exc}", file=sys.stderr)
         return self.window
 
     def do_activate(self):
@@ -79,7 +79,7 @@ class KilnApp(Adw.Application):
 
     def _about(self, *_args):
         about = Adw.AboutDialog(
-            application_name="Kiln Player",
+            application_name="Astra Player",
             application_icon=APP_ID,
             version=__version__,
             developer_name="Hafij",
@@ -94,4 +94,4 @@ class KilnApp(Adw.Application):
 
 def main():
     argv = [a for a in sys.argv if a != "--new-instance"]
-    return KilnApp().run(argv)
+    return AstraApp().run(argv)

@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Kiln Player
+Name=Astra Player
 GenericName=Media Player
 Comment=Play video and music with every codec built in
-Exec=kiln-player %U
-TryExec=kiln-player
-Icon=io.github.hafij.KilnPlayer
+Exec=astra-player %U
+TryExec=astra-player
+Icon=io.github.hafij.AstraPlayer
 Terminal=false
 StartupNotify=true
 DBusActivatable=false
@@ -16,4 +16,4 @@ Actions=new-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=kiln-player --new-instance
+Exec=astra-player --new-instance

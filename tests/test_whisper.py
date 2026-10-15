@@ -5,7 +5,7 @@
 Audio extraction is always tested on clips generated with ffmpeg. The full
 speech-to-text run needs a speech engine (whisper-cli or pywhispercpp) and a
 downloaded model; it uses the spoken sample that ships with Ubuntu's
-whisper.cpp package, or the WAV named by KILN_SPEECH_WAV, and is skipped
+whisper.cpp package, or the WAV named by ASTRA_SPEECH_WAV, and is skipped
 when either is missing. The tests never download anything.
 """
 
@@ -26,12 +26,12 @@ import gi  # noqa: E402
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst  # noqa: E402
 
-from kiln_player import whisper  # noqa: E402
-from kiln_player.playlist import path_to_uri  # noqa: E402
+from astra_player import whisper  # noqa: E402
+from astra_player.playlist import path_to_uri  # noqa: E402
 
 Gst.init(None)
 FF = ["ffmpeg", "-v", "error", "-y"]
-SPEECH_SAMPLES = [os.environ.get("KILN_SPEECH_WAV", ""),
+SPEECH_SAMPLES = [os.environ.get("ASTRA_SPEECH_WAV", ""),
                   "/usr/share/sounds/debian/samples/en-Wikipedia-Ignore_All_Rules.wav"]
 
 
@@ -118,7 +118,7 @@ class DownloadTests(unittest.TestCase):
 class ExtractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp = Path(tempfile.mkdtemp(prefix="kiln-whisper-test-"))
+        cls.tmp = Path(tempfile.mkdtemp(prefix="astra-whisper-test-"))
         cls.clip = cls.tmp / "two tracks.mkv"
         subprocess.run(FF + ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25",
                              "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",

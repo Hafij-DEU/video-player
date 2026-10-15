@@ -1,10 +1,13 @@
-# Kiln Player
+# Astra Player
+
+*Formerly Kiln Player. Installing Astra Player replaces the `kiln-player`
+package and carries over your settings, resume points and Whisper models.*
 
 A free, PotPlayer-style media player for Linux. No ads, no account, no
 subscription, and no codec packs to download later: every decoder comes in
 with the package dependencies when you install it.
 
-Kiln Player is written from scratch in Python with GTK 4, libadwaita and
+Astra Player is written from scratch in Python with GTK 4, libadwaita and
 GStreamer. Decoding is done by FFmpeg (through `gst-libav`) and GStreamer,
 with VA-API hardware decoding when the GPU supports it. It contains no code
 from PotPlayer.
@@ -40,7 +43,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/kiln-player_1.1.0_all.deb
+sudo apt install ./dist/astra-player_1.2.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
@@ -64,16 +67,16 @@ Without root, the Python binding works too:
 pip install --user --break-system-packages pywhispercpp
 ```
 
-Kiln Player never downloads anything on its own. The first time you generate
+Astra Player never downloads anything on its own. The first time you generate
 subtitles it asks before it fetches the chosen model from huggingface.co, and
 the dialog shows the size. Models are checked against their SHA-256 and kept in
-`~/.local/share/kiln-player/models`. Audio is extracted with `ffmpeg` when it is
+`~/.local/share/astra-player/models`. Audio is extracted with `ffmpeg` when it is
 installed, otherwise with GStreamer.
 
 Run from the source tree without installing:
 
 ```bash
-python3 -m kiln_player video.mkv
+python3 -m astra_player video.mkv
 ```
 
 ## Hotkeys
@@ -106,7 +109,7 @@ Xvfb :77 -screen 0 1280x800x24 &
 DISPLAY=:77 GDK_BACKEND=x11 dbus-run-session python3 tests/gui_selftest.py
 ```
 
-`dbus-run-session` keeps the test from handing off to a Kiln Player that is
+`dbus-run-session` keeps the test from handing off to a Astra Player that is
 already open on your desktop.
 
 The Whisper unit tests need no display:
@@ -117,7 +120,7 @@ python3 -m unittest tests/test_whisper.py
 
 The speech-recognition checks in both tests run only when a speech engine and a
 downloaded model are present. They use the spoken sample from the `whisper.cpp`
-package, or the WAV file named by `KILN_SPEECH_WAV`. Otherwise they are
+package, or the WAV file named by `ASTRA_SPEECH_WAV`. Otherwise they are
 skipped. The tests never download a model.
 
 ## License

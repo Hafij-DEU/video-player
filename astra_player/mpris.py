@@ -2,7 +2,7 @@
 
 from gi.repository import Gio, GLib
 
-BUS_NAME = "org.mpris.MediaPlayer2.kiln_player"
+BUS_NAME = "org.mpris.MediaPlayer2.astra_player"
 PATH = "/org/mpris/MediaPlayer2"
 ROOT = "org.mpris.MediaPlayer2"
 PLAYER = "org.mpris.MediaPlayer2.Player"
@@ -78,7 +78,7 @@ class Mpris:
             status = "Stopped"
         else:
             status = "Playing" if e.playing else "Paused"
-        meta = {"mpris:trackid": GLib.Variant("o", "/io/github/hafij/KilnPlayer/track/%d" % max(w.playlist.index, 0))}
+        meta = {"mpris:trackid": GLib.Variant("o", "/io/github/hafij/AstraPlayer/track/%d" % max(w.playlist.index, 0))}
         entry = w.playlist.current
         if entry:
             meta["xesam:title"] = GLib.Variant("s", e.tags.get("title") or entry.title)
@@ -108,8 +108,8 @@ class Mpris:
             "CanQuit": GLib.Variant("b", True),
             "CanRaise": GLib.Variant("b", True),
             "HasTrackList": GLib.Variant("b", False),
-            "Identity": GLib.Variant("s", "Kiln Player"),
-            "DesktopEntry": GLib.Variant("s", "io.github.hafij.KilnPlayer"),
+            "Identity": GLib.Variant("s", "Astra Player"),
+            "DesktopEntry": GLib.Variant("s", "io.github.hafij.AstraPlayer"),
             "SupportedUriSchemes": GLib.Variant("as", ["file", "http", "https", "rtsp", "rtmp", "mms"]),
             "SupportedMimeTypes": GLib.Variant("as", ["video/mp4", "video/x-matroska", "audio/mpeg",
                                                       "audio/flac", "video/webm"]),

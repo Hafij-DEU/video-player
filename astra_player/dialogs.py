@@ -178,7 +178,7 @@ def confirm_model_download(win, name, on_yes):
 
 def whisper_missing(win):
     dlg = Adw.AlertDialog(heading="Speech engine not installed",
-                          body="Kiln Player uses whisper.cpp to turn speech into subtitles offline.")
+                          body="Astra Player uses whisper.cpp to turn speech into subtitles offline.")
     hint = Gtk.Label(label=whisper.install_hint(), selectable=True, xalign=0, wrap=True,
                      css_classes=["monospace"])
     dlg.set_extra_child(hint)
