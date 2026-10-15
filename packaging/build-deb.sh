@@ -42,7 +42,8 @@ Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0 (>= 4.14), gir1.2-adw-1 (
  gir1.2-gstreamer-1.0, gir1.2-gst-plugins-base-1.0, gir1.2-graphene-1.0,
  gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad,
  gstreamer1.0-plugins-ugly, gstreamer1.0-libav, gstreamer1.0-gtk4, gstreamer1.0-gl
-Recommends: gstreamer1.0-plugins-extra, gstreamer1.0-pipewire, yt-dlp
+Recommends: gstreamer1.0-plugins-extra, gstreamer1.0-pipewire, yt-dlp, whisper.cpp, ffmpeg
+Suggests: libggml0-backend-vulkan
 Homepage: https://github.com/Hafij-DEU/video-player
 Description: free media player with every codec built in
  Kiln Player is a PotPlayer-style video and music player for Linux.
@@ -56,6 +57,9 @@ Description: free media player with every codec built in
  adjustment, GLSL pixel shaders, rotation, aspect ratio control,
  screenshots, playlists, resume, streams and web video via yt-dlp, and
  MPRIS media-key support. No ads, no account, no extra downloads.
+ .
+ With whisper.cpp installed it can also make subtitles from speech,
+ offline. The speech model is only downloaded after you confirm it.
 CTL
 
 cat > "$STAGE/DEBIAN/postinst" <<'SH'

@@ -1,7 +1,8 @@
-"""Secondary dialogs: equalizer, color adjust, media info, preferences, shortcuts, URL."""
+"""Secondary dialogs: equalizer, color adjust, media info, preferences, shortcuts, URL, Whisper."""
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
+from . import whisper
 from .engine import EQ_FREQS, EQ_PRESETS
 
 
@@ -156,6 +157,36 @@ def ask_url(win, callback):
     dlg.present(win)
 
 
+def confirm_model_download(win, name, on_yes):
+    """Ask before fetching a Whisper model; nothing is downloaded unless the user agrees."""
+    size = whisper.fmt_size(whisper.MODELS[name][0])
+    dlg = Adw.AlertDialog(
+        heading="Download speech model?",
+        body=(f"Making subtitles needs the Whisper \u201c{name}\u201d model ({size}). "
+              f"It is downloaded once from huggingface.co and kept in "
+              f"{whisper.MODELS_DIR}. Speech recognition then runs offline on this computer.\n\n"
+              f"You can pick a smaller or more accurate model in Preferences."))
+    dlg.add_response("cancel", "Cancel")
+    dlg.add_response("download", f"Download {size}")
+    dlg.set_response_appearance("download", Adw.ResponseAppearance.SUGGESTED)
+    dlg.set_default_response("download")
+    dlg.set_close_response("cancel")
+    dlg.connect("response", lambda _d, r: on_yes() if r == "download" else None)
+    dlg.present(win)
+    return dlg
+
+
+def whisper_missing(win):
+    dlg = Adw.AlertDialog(heading="Speech engine not installed",
+                          body="Kiln Player uses whisper.cpp to turn speech into subtitles offline.")
+    hint = Gtk.Label(label=whisper.install_hint(), selectable=True, xalign=0, wrap=True,
+                     css_classes=["monospace"])
+    dlg.set_extra_child(hint)
+    dlg.add_response("close", "Close")
+    dlg.present(win)
+    return dlg
+
+
 SHORTCUTS = [
     ("Playback", [
         ("Space", "Play / pause"),
@@ -182,6 +213,7 @@ SHORTCUTS = [
         (",  /  .", "Subtitle delay ±0.5 s"),
         ("/", "Reset subtitle delay"),
         ("Ctrl+Shift+S", "Load subtitle file"),
+        ("Menu \u203a Subtitles", "Generate subtitles (Whisper)"),
     ]),
     ("Video", [
         ("Enter  ·  double-click", "Fullscreen"),
@@ -246,6 +278,7 @@ class PreferencesDialog:
         font_row.add_suffix(font_btn)
         subs.add(font_row)
         page.add(subs)
+        page.add(self._whisper_group())
 
         shots = Adw.PreferencesGroup(title="Screenshots")
         self.shot_row = Adw.ActionRow(title="Save folder", subtitle=s["screenshot_dir"])
@@ -259,6 +292,59 @@ class PreferencesDialog:
         dlg.add(page)
         self.dialog = dlg
         dlg.connect("closed", lambda _d: s.save())
+
+    def _whisper_group(self):
+        s = self.win.settings
+        backend = whisper.find_backend()
+        group = Adw.PreferencesGroup(
+            title="Speech to text (Whisper)",
+            description="Subtitles \u203a Generate subtitles turns speech into an .srt file offline.")
+        engine = Adw.ActionRow(title="Speech engine", subtitle=whisper.backend_label(backend))
+        if backend is None:
+            engine.set_subtitle("Not installed: sudo apt install whisper.cpp, "
+                                "or pip install --user pywhispercpp")
+        group.add(engine)
+
+        names = list(whisper.MODELS)
+        self.model_row = Adw.ComboRow(
+            title="Model", subtitle="Tiny is fastest, small most accurate. "
+                                    "Downloaded on first use, after you confirm")
+        self.model_row.set_model(Gtk.StringList.new([self._model_label(n) for n in names]))
+        self.model_row.set_selected(names.index(s["whisper_model"]) if s["whisper_model"] in names else 1)
+        self.model_row.connect("notify::selected",
+                               lambda r, _p: s.__setitem__("whisper_model", names[r.get_selected()]))
+        group.add(self.model_row)
+
+        codes = [c for c, _l in whisper.LANGUAGES]
+        lang = Adw.ComboRow(title="Spoken language")
+        lang.set_model(Gtk.StringList.new([label for _c, label in whisper.LANGUAGES]))
+        lang.set_selected(codes.index(s["whisper_language"]) if s["whisper_language"] in codes else 0)
+        lang.connect("notify::selected", lambda r, _p: s.__setitem__("whisper_language", codes[r.get_selected()]))
+        group.add(lang)
+
+        group.add(self._switch("Translate to English", "whisper_translate"))
+        gpu = self._switch("Use the GPU (Vulkan)", "whisper_gpu",
+                           "whisper-cli with libggml0-backend-vulkan; otherwise the CPU is used")
+        gpu.set_sensitive(backend is not None and backend[0] == "cli")
+        group.add(gpu)
+
+        folder = Adw.ActionRow(title="Model folder", subtitle=str(whisper.MODELS_DIR))
+        open_btn = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
+                              tooltip_text="Open folder")
+        open_btn.connect("clicked", self._open_models)
+        folder.add_suffix(open_btn)
+        group.add(folder)
+        return group
+
+    @staticmethod
+    def _model_label(name):
+        size = whisper.fmt_size(whisper.MODELS[name][0])
+        mark = " \u2713" if whisper.model_installed(name) else ""
+        return f"{name} ({size}){mark}"
+
+    def _open_models(self, _btn):
+        whisper.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        Gtk.FileLauncher(file=Gio.File.new_for_path(str(whisper.MODELS_DIR))).launch(self.win, None, None)
 
     def _switch(self, title, key, subtitle=None, on_change=None):
         row = Adw.SwitchRow(title=title, active=self.win.settings[key])

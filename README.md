@@ -19,6 +19,10 @@ from PotPlayer.
 - **Subtitles**: embedded tracks and external `.srt .ass .ssa .vtt .sub .smi`,
   loaded automatically when the name matches the video. Includes delay
   adjustment, track switching and font choice.
+- **Speech to subtitles**: Subtitles › *Generate subtitles (Whisper)…* turns
+  the speech in the current file into `<name>.whisper.srt` beside it, offline,
+  and loads it. Choose the model (tiny 78 MB, base 148 MB, small 488 MB),
+  the spoken language, and optional translation to English in Preferences.
 - **Audio**: track switching, 10-band equalizer with presets, volume up to 200%,
   audio delay, and visualization for music.
 - **Playback**: speed 0.1×–8× with pitch correction, A-B repeat, frame stepping
@@ -36,12 +40,35 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/kiln-player_1.0.0_all.deb
+sudo apt install ./dist/kiln-player_1.1.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
 sets, so every codec is installed at that point.
-`gstreamer1.0-plugins-extra` (VA-API) and `yt-dlp` are recommended extras.
+`gstreamer1.0-plugins-extra` (VA-API), `yt-dlp` and `whisper.cpp` are
+recommended extras.
+
+### Speech to subtitles
+
+Subtitle generation uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+and runs on your own computer. Install one engine:
+
+```bash
+sudo apt install whisper.cpp                 # whisper-cli, CPU
+sudo apt install libggml0-backend-vulkan     # optional: GPU through Vulkan
+```
+
+Without root, the Python binding works too:
+
+```bash
+pip install --user --break-system-packages pywhispercpp
+```
+
+Kiln Player never downloads anything on its own. The first time you generate
+subtitles it asks before it fetches the chosen model from huggingface.co, and
+the dialog shows the size. Models are checked against their SHA-256 and kept in
+`~/.local/share/kiln-player/models`. Audio is extracted with `ffmpeg` when it is
+installed, otherwise with GStreamer.
 
 Run from the source tree without installing:
 
@@ -76,8 +103,22 @@ real window:
 
 ```bash
 Xvfb :77 -screen 0 1280x800x24 &
-DISPLAY=:77 GDK_BACKEND=x11 python3 tests/gui_selftest.py
+DISPLAY=:77 GDK_BACKEND=x11 dbus-run-session python3 tests/gui_selftest.py
 ```
+
+`dbus-run-session` keeps the test from handing off to a Kiln Player that is
+already open on your desktop.
+
+The Whisper unit tests need no display:
+
+```bash
+python3 -m unittest tests/test_whisper.py
+```
+
+The speech-recognition checks in both tests run only when a speech engine and a
+downloaded model are present. They use the spoken sample from the `whisper.cpp`
+package, or the WAV file named by `KILN_SPEECH_WAV`. Otherwise they are
+skipped. The tests never download a model.
 
 ## License
 

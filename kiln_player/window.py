@@ -8,7 +8,7 @@ from pathlib import Path
 
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
-from . import dialogs
+from . import dialogs, whisper
 from .engine import FLIP_METHODS, Engine, discover
 from .playlist import (MEDIA_EXT, PLAYLIST_EXT, Playlist, display_name, expand, ext_of,
                        find_subtitle, fmt_time, folder_media, media_filter, path_to_uri,
@@ -66,6 +66,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._loading_index = None
         self._eq_dialog = None
         self._color_dialog = None
+        self._whisper_cancel = None
+        self._whisper_thread = None
 
         self.engine.volume = self.settings["volume"]
         self.engine.mute = self.settings["muted"]
@@ -304,6 +306,10 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec.append("Show subtitles", "win.subs-visible")
         self.subtitle_menu.append_section(None, sec)
         sec = Gio.Menu()
+        sec.append("Generate subtitles (Whisper)…", "win.whisper-generate")
+        sec.append("Cancel subtitle generation", "win.whisper-cancel")
+        self.subtitle_menu.append_section(None, sec)
+        sec = Gio.Menu()
         sec.append("Delay +0.5 s (later)", "win.sub-later")
         sec.append("Delay −0.5 s (earlier)", "win.sub-earlier")
         sec.append("Reset delay", "win.sub-reset")
@@ -434,6 +440,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("audio-reset", simple(lambda: self.shift_audio(None)))
         add("load-subtitle", simple(self.load_subtitle_dialog))
         add("subs-visible", self._act_bool("subs-visible", self._set_subs_visible), state=GLib.Variant.new_boolean(True))
+        add("whisper-generate", simple(self.generate_subtitles))
+        add("whisper-cancel", simple(self.cancel_whisper)).set_enabled(False)
         add("sub-later", simple(lambda: self.shift_subs(0.5)))
         add("sub-earlier", simple(lambda: self.shift_subs(-0.5)))
         add("sub-reset", simple(lambda: self.shift_subs(None)))
@@ -830,6 +838,104 @@ class PlayerWindow(Adw.ApplicationWindow):
             self.attach_subtitle(f.get_uri())
 
         fd.open(self, None, done)
+
+    # ------------------------------------------------- speech to subtitles
+
+    def generate_subtitles(self):
+        """Subtitles > Generate subtitles (Whisper): transcribe the current file offline."""
+        if self._whisper_thread is not None:
+            self.toast("Subtitles are already being generated")
+            return
+        uri = self.engine.uri
+        path = uri_to_path(uri) if uri else None
+        if path is None or not path.is_file():
+            self.toast("Open a local video or audio file first")
+            return
+        backend = whisper.find_backend()
+        if backend is None:
+            dialogs.whisper_missing(self)
+            return
+        name = self.settings["whisper_model"]
+        if name not in whisper.MODELS:
+            name = self.settings["whisper_model"] = "base"
+        if not whisper.model_installed(name):
+            # Never fetch anything unasked: the dialog shows what and how big.
+            dialogs.confirm_model_download(self, name, lambda: self._download_model(name))
+            return
+        tracks = len(self.engine.audio_tracks())
+        track = min(max(self.engine.current_audio, 0), max(tracks - 1, 0))
+        out = whisper.output_path(path)
+        opts = dict(model=whisper.model_path(name), language=self.settings["whisper_language"],
+                    translate=self.settings["whisper_translate"], gpu=self.settings["whisper_gpu"],
+                    track=track, duration=self.engine.duration(), backend=backend)
+        stages = {"extract": "Extracting audio", "transcribe": f"Transcribing ({name} model)"}
+
+        def work(progress, cancel):
+            whisper.generate(uri, out, progress=lambda st, f: progress(stages[st], f), cancel=cancel, **opts)
+            return out
+
+        def finished(result):
+            if self.engine.uri == uri:
+                self.attach_subtitle(path_to_uri(result))
+                self._set_subs_visible(True, osd=False)
+                self.lookup_action("subs-visible").set_state(GLib.Variant.new_boolean(True))
+            self.toast(f"Subtitles saved as {result.name}" if result.parent == path.parent
+                       else f"Subtitles saved to {result}")
+
+        self._run_whisper_task(work, finished, "Subtitle generation")
+
+    def _download_model(self, name):
+        size = whisper.fmt_size(whisper.MODELS[name][0])
+
+        def work(progress, cancel):
+            whisper.download_model(name, lambda f: progress(f"Downloading {name} model ({size})", f), cancel)
+
+        def finished(_result):
+            self.show_osd(f"Whisper {name} model ready")
+            self.generate_subtitles()
+
+        self._run_whisper_task(work, finished, "Model download")
+
+    def _run_whisper_task(self, work, finished, what):
+        """Run ``work(progress, cancel)`` in a thread, showing progress in the OSD."""
+        cancel = threading.Event()
+        self._whisper_cancel = cancel
+        self.lookup_action("whisper-cancel").set_enabled(True)
+        last = [None]
+
+        def progress(label, fraction):
+            text = f"{label}… {int(fraction * 100)}%"
+            if text != last[0]:
+                last[0] = text
+                GLib.idle_add(lambda: self.show_osd(text, 6000) if not cancel.is_set() else None)
+
+        def done(result, error):
+            self._whisper_thread = None
+            self._whisper_cancel = None
+            self.lookup_action("whisper-cancel").set_enabled(False)
+            if isinstance(error, whisper.Cancelled) or cancel.is_set():
+                self.show_osd(f"{what} cancelled")
+            elif error is not None:
+                self.show_osd(f"{what} failed", 3000)
+                self.toast(f"{what} failed: {error}")
+            else:
+                finished(result)
+            return False
+
+        def run():
+            try:
+                result, error = work(progress, cancel), None
+            except Exception as exc:  # reported to the user, never fatal
+                result, error = None, exc
+            GLib.idle_add(done, result, error)
+
+        self._whisper_thread = threading.Thread(target=run, daemon=True)
+        self._whisper_thread.start()
+
+    def cancel_whisper(self):
+        if self._whisper_cancel is not None:
+            self._whisper_cancel.set()
+            self.show_osd("Cancelling…")
 
     def _clear_recent(self):
         self.settings["recent"] = []
@@ -1338,6 +1444,9 @@ class PlayerWindow(Adw.ApplicationWindow):
             self.settings.save()
 
     def _on_close(self, *_args):
+        if self._whisper_thread is not None:
+            self._whisper_cancel.set()
+            self._whisper_thread.join(3)
         self._save_resume()
         self.settings.save()
         self.engine.shutdown()

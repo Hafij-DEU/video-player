@@ -17,12 +17,17 @@ os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp(prefix="kiln-cfg-"))
 
 from gi.repository import GLib  # noqa: E402
 
+from kiln_player import whisper  # noqa: E402
 from kiln_player.app import KilnApp  # noqa: E402
 from kiln_player.playlist import path_to_uri  # noqa: E402
 from kiln_player.shaders import SHADERS  # noqa: E402
 
 MEDIA = Path(tempfile.mkdtemp(prefix="kiln-media-"))
 FF = ["ffmpeg", "-v", "error", "-y"]
+# Spoken English sample from Ubuntu's whisper.cpp package (or KILN_SPEECH_WAV).
+SPEECH_WAV = next((p for p in (os.environ.get("KILN_SPEECH_WAV", ""),
+                               "/usr/share/sounds/debian/samples/en-Wikipedia-Ignore_All_Rules.wav")
+                   if p and Path(p).is_file()), None)
 
 
 def make_media():
@@ -172,10 +177,61 @@ def scenario(app):
     win.unfullscreen()
     pump(0.3)
 
+    whisper_checks(win)
+
     failed = [n for n, ok in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed", flush=True)
     app.exit_code = 1 if failed else 0
     app.quit()
+
+
+def whisper_checks(win):
+    e = win.engine
+    act = win.lookup_action("whisper-generate")
+    check("whisper menu action", act is not None and act.get_enabled()
+          and not win.lookup_action("whisper-cancel").get_enabled())
+
+    # A missing model must open a confirmation dialog, never start a download.
+    saved = whisper.find_backend, whisper.model_installed
+    whisper.find_backend = lambda: ("python", sys.executable)
+    whisper.model_installed = lambda _name: False
+    try:
+        win.generate_subtitles()
+        pump(0.3)
+        dlg = win.get_visible_dialog()
+        check("model download asks first", dlg is not None and win._whisper_thread is None
+              and "MB" in dlg.get_body(), dlg.get_body()[:60] if dlg else "no dialog")
+        if dlg:
+            dlg.close()
+            pump(0.3)
+    finally:
+        whisper.find_backend, whisper.model_installed = saved
+
+    model = next((n for n in whisper.MODELS if whisper.model_installed(n)), None)
+    if not (whisper.find_backend() and model and SPEECH_WAV):
+        print("[SKIP] whisper transcription (needs whisper-cli or pywhispercpp, "
+              "a downloaded model and a speech sample)", flush=True)
+        return
+    folder = MEDIA / "speech"
+    folder.mkdir()
+    clip = folder / "talk.mkv"
+    subprocess.run(FF + ["-f", "lavfi", "-i", "testsrc2=size=640x360:rate=25", "-i", SPEECH_WAV,
+                         "-t", "20", "-shortest", "-c:v", "libx264", "-preset", "ultrafast",
+                         "-c:a", "aac", str(clip)], check=True)
+    win.open_uris([path_to_uri(clip)])
+    wait_for(win, lambda: e.playing and (e.position() or 0) > 0.2)
+    win.settings["whisper_model"] = model
+    win.settings["whisper_language"] = "auto"
+    win.generate_subtitles()
+    check("whisper job starts", win._whisper_thread is not None
+          and win.lookup_action("whisper-cancel").get_enabled())
+    srt = folder / "talk.whisper.srt"
+    ok = wait_for(win, lambda: win._whisper_thread is None, 180)
+    check("whisper writes .whisper.srt", ok and srt.is_file() and "rule" in srt.read_text().lower(),
+          srt.read_text()[:80].replace("\n", " ") if srt.is_file() else "missing")
+    check("whisper subtitle attached", wait_for(win, lambda: (win.playlist.current.suburi or "").endswith(
+        "talk.whisper.srt") and e.playing and len(e.subtitle_tracks()) >= 1),
+        str(e.subtitle_tracks()))
 
 
 def main():
