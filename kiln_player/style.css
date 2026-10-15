@@ -1,0 +1,111 @@
+/* Kiln Player: dark, PotPlayer-like look with an amber accent. */
+
+:root {
+  --accent-bg-color: #f2a516;
+  --accent-color: #ffbe3d;
+  --accent-fg-color: #1a1204;
+}
+
+window, .background {
+  background-color: #141416;
+}
+
+.video-area {
+  background-color: #000000;
+}
+
+.video-holder {
+  background-color: #000000;
+}
+
+.idle-logo {
+  opacity: 0.85;
+}
+
+.idle-title {
+  font-size: 22pt;
+  font-weight: 700;
+  color: #f2f2f2;
+}
+
+.idle-hint {
+  color: alpha(#ffffff, 0.55);
+}
+
+.album-art {
+  border-radius: 10px;
+  box-shadow: 0 6px 24px alpha(#000000, 0.6);
+}
+
+.osd {
+  background-color: alpha(#000000, 0.62);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13pt;
+  font-weight: 600;
+  text-shadow: 0 1px 2px #000000;
+}
+
+.controls {
+  padding: 4px 10px 6px 10px;
+  background-color: alpha(#1c1c20, 0.94);
+}
+
+.controls .time {
+  font-size: 10pt;
+  color: alpha(#ffffff, 0.8);
+  min-width: 52px;
+}
+
+.controls button.ctl {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 2px;
+}
+
+.controls button.play {
+  color: var(--accent-color);
+}
+
+.badge-info {
+  color: var(--accent-color);
+  font-weight: 600;
+  font-size: 10pt;
+}
+
+scale.seekbar trough {
+  min-height: 6px;
+  border-radius: 3px;
+}
+
+scale.seekbar highlight {
+  background-color: var(--accent-bg-color);
+  border-radius: 3px;
+}
+
+scale.seekbar slider {
+  min-width: 14px;
+  min-height: 14px;
+  margin: -5px;
+}
+
+scale.seekbar marks indicator {
+  color: var(--accent-color);
+  min-height: 5px;
+}
+
+.playlist-panel {
+  background-color: #1a1a1d;
+  border-left: 1px solid alpha(#ffffff, 0.07);
+}
+
+.playlist {
+  background-color: transparent;
+}
+
+.playlist row.current {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 18%, transparent);
+  color: var(--accent-color);
+  font-weight: 700;
+}
