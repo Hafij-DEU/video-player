@@ -11,7 +11,7 @@ StartupNotify=true
 DBusActivatable=false
 Categories=AudioVideo;Video;Audio;Player;GTK;
 Keywords=video;movie;music;audio;player;mkv;mp4;subtitle;
-MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/x-flv;video/x-ms-wmv;video/x-ms-asf;video/3gpp;video/3gpp2;video/mp2t;video/x-ogm+ogg;video/ogg;video/vnd.rn-realvideo;video/x-m4v;video/dv;video/x-theora+ogg;audio/mpeg;audio/mp4;audio/x-m4a;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/x-wav;audio/wav;audio/aac;audio/x-aac;audio/ac3;audio/x-matroska;audio/x-ms-wma;audio/x-ape;audio/x-wavpack;audio/x-aiff;audio/webm;audio/x-mpegurl;audio/x-scpls;application/vnd.apple.mpegurl;x-scheme-handler/rtsp;x-scheme-handler/mms;
+MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/x-flv;video/x-ms-wmv;video/x-ms-asf;video/3gpp;video/3gpp2;video/mp2t;video/x-ogm+ogg;video/ogg;video/vnd.rn-realvideo;video/x-m4v;video/dv;video/x-theora+ogg;audio/mpeg;audio/mp4;audio/x-m4a;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/x-wav;audio/wav;audio/aac;audio/x-aac;audio/ac3;audio/x-matroska;audio/x-ms-wma;audio/x-ape;audio/x-wavpack;audio/x-aiff;audio/webm;audio/x-mpegurl;audio/x-scpls;application/vnd.apple.mpegurl;x-scheme-handler/rtsp;x-scheme-handler/mms;inode/directory;
 Actions=new-window;
 
 [Desktop Action new-window]

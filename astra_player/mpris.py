@@ -129,7 +129,10 @@ class Mpris:
     def _call(self, conn, sender, path, iface, method, params, invocation):
         w, e = self.win, self.win.engine
         if method == "Raise":
-            w.present()
+            if w.pip is not None:
+                w.leave_pip()
+            else:
+                w.present()
         elif method == "Quit":
             self.app.activate_action("quit", None)
         elif method == "Next":

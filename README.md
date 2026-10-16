@@ -33,12 +33,20 @@ from PotPlayer.
 - **Audio**: track switching, 10-band equalizer with presets, volume up to 200%,
   audio delay, and visualization for music.
 - **Playback**: speed 0.1×–8× with pitch correction, A-B repeat, frame stepping
-  forward and back, chapters, resume where you left off, repeat and shuffle.
+  forward and back, chapters, resume where you left off, shuffle, and a repeat
+  button that cycles play once / repeat file / repeat playlist.
+- **Record a portion**: press Record (Ctrl+R) to start and again to stop, or
+  set A and B, and save just that part to a new file. *Fast* copies the streams
+  losslessly and cuts at the nearest keyframe. *Precise* re-encodes to MP4 and
+  cuts on the exact frame. Works for YouTube too, through yt-dlp. Needs `ffmpeg`.
+- **Picture in picture** (Ctrl+P): a small borderless window you can drag and
+  resize from the corner. On GNOME, press Alt+Space › Always on Top to pin it.
 - **Video**: brightness, contrast, saturation and hue; rotate and flip
   (follows phone rotation tags); aspect ratio presets; GLSL pixel shaders
   (sharpen, soften, grayscale, sepia, night vision and more); screenshots.
 - **Playlist**: adds the rest of the folder automatically, reads and writes
-  M3U/M3U8/PLS, opens folders, takes drag and drop.
+  M3U/M3U8/PLS, plays whole folders including subfolders (button, Ctrl+F, drag
+  a folder in, or *Open With* on a folder in Files), takes drag and drop.
 - **Desktop**: MPRIS (media keys, GNOME/KDE media controls), screensaver
   inhibit while playing, single-window mode.
 - PotPlayer-style hotkeys (press **F1** in the app for the full list).
@@ -47,7 +55,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.3.0_all.deb
+sudo apt install ./dist/astra-player_1.4.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
@@ -100,6 +108,9 @@ python3 -m astra_player video.mkv
 | W E / R T / Y U / I O, Q | Brightness / contrast / saturation / hue, reset |
 | Ctrl+E | Screenshot |
 | Ctrl+O, Ctrl+F, Ctrl+U, Ctrl+V | Open files, folder, URL, clipboard |
+| Ctrl+L | Repeat: once / file / playlist |
+| Ctrl+R, Ctrl+Shift+R | Record start/stop and save; save A-B segment |
+| Ctrl+P | Picture in picture |
 | Ctrl+Y | Search YouTube |
 | F6 / F5 / Ctrl+F1 / Tab | Playlist / preferences / media info / status |
 | Right-click | Full menu |

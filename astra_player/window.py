@@ -12,7 +12,7 @@ from pathlib import Path
 
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
-from . import dialogs, whisper, youtube
+from . import dialogs, export, whisper, youtube
 from .engine import FLIP_METHODS, Engine, discover
 from .search_dialog import SearchDialog
 from .playlist import (MEDIA_EXT, PLAYLIST_EXT, Playlist, display_name, expand, ext_of,
@@ -145,6 +145,9 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._loading_index = None
         self._eq_dialog = None
         self._color_dialog = None
+        self.pip = None
+        self._rec_start = None
+        self._export = None
         self._whisper_cancel = None
         self._whisper_thread = None
 
@@ -279,8 +282,13 @@ class PlayerWindow(Adw.ApplicationWindow):
                   btn("media-playback-stop-symbolic", "Stop (F4)", "win.stop"),
                   btn("media-skip-backward-symbolic", "Previous (Page Up)", "win.previous"),
                   btn("media-skip-forward-symbolic", "Next (Page Down)", "win.next"),
-                  btn("document-open-symbolic", "Open files (Ctrl+O)", "win.open")):
+                  btn("document-open-symbolic", "Open files (Ctrl+O)", "win.open"),
+                  btn("folder-videos-symbolic", "Play a folder (Ctrl+F)", "win.open-folder")):
             row.append(w)
+        self.repeat_btn = btn("media-playlist-repeat-symbolic", "Repeat (Ctrl+L)", "win.repeat-cycle")
+        row.append(self.repeat_btn)
+        self.record_btn = btn("media-record-symbolic", "Record a portion (Ctrl+R)", "win.record")
+        row.append(self.record_btn)
         self.info_label = Gtk.Label(css_classes=["badge-info"], hexpand=True, xalign=0.5)
         row.append(self.info_label)
 
@@ -305,6 +313,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         row.append(self.volume)
         self.vol_label = Gtk.Label(css_classes=["time", "numeric"], width_chars=4)
         row.append(self.vol_label)
+        row.append(btn("view-dual-symbolic", "Picture in picture (Ctrl+P)", "win.pip"))
         row.append(btn("view-fullscreen-symbolic", "Fullscreen (Enter)", "win.fullscreen"))
 
         controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["controls"])
@@ -365,6 +374,11 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec.append_submenu("A-B repeat", ab)
         sec.append_submenu("Frame step", frames)
         sec.append_submenu("Chapters", self.chapter_menu)
+        self.playback_menu.append_section(None, sec)
+        sec = Gio.Menu()
+        sec.append("Start / stop recording", "win.record")
+        sec.append("Save A-B segment…", "win.export-ab")
+        sec.append("Cancel saving", "win.export-cancel")
         self.playback_menu.append_section(None, sec)
 
         self.audio_tracks = Gio.Menu()
@@ -431,6 +445,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec = Gio.Menu()
         sec.append("Playlist", "win.show-playlist")
         sec.append("Fullscreen", "win.fullscreen")
+        sec.append("Picture in picture", "win.pip")
         sec.append("Media info", "win.media-info")
         self.main_menu.append_section(None, sec)
         sec = Gio.Menu()
@@ -547,6 +562,12 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("playlist-clear", simple(self._playlist_clear))
         add("playlist-sort", simple(self._playlist_sort))
         add("playlist-save", simple(self._playlist_save))
+        add("repeat-cycle", simple(self.cycle_repeat))
+        add("pip", simple(self.toggle_pip))
+        add("record", simple(self.toggle_record))
+        add("export-ab", simple(self.export_ab))
+        add("export-cancel", simple(self.cancel_export)).set_enabled(False)
+        self._update_repeat_ui()
 
     def _act_bool(self, name, setter):
         def change(action, value):
@@ -562,6 +583,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.settings["loop_mode"] = param.get_string()
         labels = {"none": "Play once", "one": "Repeat file", "playlist": "Repeat playlist"}
         self.show_osd(labels[param.get_string()])
+        self._update_repeat_ui()
 
     def _act_audio_track(self, action, param):
         idx = param.get_int32()
@@ -634,7 +656,9 @@ class PlayerWindow(Adw.ApplicationWindow):
                               ("<Ctrl>e", "win.screenshot"), ("<Ctrl>F1", "win.media-info"),
                               ("F5", "win.preferences"), ("F1", "win.shortcuts"),
                               ("<Ctrl><Shift>s", "win.load-subtitle"), ("<Ctrl>q", "app.quit"),
-                              ("<Ctrl>w", "win.stop"), ("F4", "win.stop")):
+                              ("<Ctrl>w", "win.stop"), ("F4", "win.stop"),
+                              ("<Ctrl>l", "win.repeat-cycle"), ("<Ctrl>p", "win.pip"),
+                              ("<Ctrl>r", "win.record"), ("<Ctrl><Shift>r", "win.export-ab")):
             self.app.set_accels_for_action(action, [accel])
 
     def _on_key(self, ctrl, keyval, keycode, state):
@@ -851,6 +875,10 @@ class PlayerWindow(Adw.ApplicationWindow):
             return
         self._save_resume()
         self.clear_ab(osd=False)
+        if self._rec_start is not None:
+            self._rec_start = None
+            self.record_btn.remove_css_class("recording")
+            self.show_osd("Recording discarded: file changed")
         self.playlist.index = idx
         entry = self.playlist.current
         self.settings.add_recent(entry.uri)
@@ -1328,7 +1356,180 @@ class PlayerWindow(Adw.ApplicationWindow):
             bits.append("A-B" if self.ab[1] is not None else "A-")
         if self.shader_name != "none":
             bits.append(self.shader_name)
+        if self._rec_start is not None:
+            bits.insert(0, f"● REC from {fmt_time(self._rec_start)}")
         self.info_label.set_label("   ".join(bits))
+
+    # --------------------------------------------------------- repeat
+
+    REPEAT_ORDER = ["none", "one", "playlist"]
+    REPEAT_UI = {
+        "none": ("media-playlist-consecutive-symbolic", "Play once"),
+        "one": ("media-playlist-repeat-song-symbolic", "Repeat this file"),
+        "playlist": ("media-playlist-repeat-symbolic", "Repeat playlist"),
+    }
+
+    def cycle_repeat(self):
+        order = self.REPEAT_ORDER
+        nxt = order[(order.index(self.settings["loop_mode"]) + 1) % len(order)]
+        self.activate_action("win.loop", GLib.Variant.new_string(nxt))
+
+    def _update_repeat_ui(self):
+        mode = self.settings["loop_mode"]
+        icon, label = self.REPEAT_UI[mode]
+        self.repeat_btn.set_icon_name(icon)
+        self.repeat_btn.set_tooltip_text(f"{label} (Ctrl+L to change)")
+        if mode == "none":
+            self.repeat_btn.remove_css_class("active-toggle")
+        else:
+            self.repeat_btn.add_css_class("active-toggle")
+
+    # ------------------------------------------------- picture in picture
+
+    def toggle_pip(self):
+        if self.pip is not None:
+            self.leave_pip()
+            return
+        if not self.engine.uri or not self.engine.has_video():
+            self.toast("Picture in picture needs a playing video")
+            return
+        from .pip import PipWindow
+        if self.is_fullscreen():
+            self.unfullscreen()
+        self.pip = PipWindow(self)
+        self.pip.present()
+        self.set_visible(False)
+        if not self.settings["pip_hint_shown"]:
+            self.settings["pip_hint_shown"] = True
+            self.pip.show_hint("Tip: press Alt+Space and choose \u201cAlways on Top\u201d to keep this above other windows")
+
+    def leave_pip(self, from_close=False):
+        pip, self.pip = self.pip, None
+        if pip is None:
+            return
+        pip.dispose_handlers()
+        if not from_close:
+            pip.destroy()
+        self.set_visible(True)
+        self.present()
+
+    # ------------------------------------------------------ recording
+
+    def toggle_record(self):
+        if not self.engine.uri:
+            self.toast("Nothing is playing")
+            return
+        pos = self.engine.position()
+        if pos is None:
+            return
+        if self._rec_start is None:
+            self._rec_start = pos
+            self.record_btn.add_css_class("recording")
+            self.show_osd(f"● Recording from {fmt_time(pos)} — press Ctrl+R again to stop")
+        else:
+            start, self._rec_start = self._rec_start, None
+            self.record_btn.remove_css_class("recording")
+            end = pos
+            if end - start < 0.3:
+                self.toast("Recording too short; play further before stopping")
+            else:
+                self.show_osd(f"Recorded {fmt_time(start)} – {fmt_time(end)}")
+                self.ask_export(start, end)
+        self._update_info()
+
+    def export_ab(self):
+        a, b = self.ab
+        if a is None or b is None:
+            self.toast("Set A ([) and B (]) first, or use Record (Ctrl+R)")
+            return
+        self.ask_export(a, b)
+
+    def ask_export(self, start, end):
+        entry = self.playlist.current
+        if entry is None:
+            return
+        web = _needs_ytdlp(entry.uri)
+        if web and not shutil.which("yt-dlp"):
+            self.toast("Saving web video needs yt-dlp")
+            return
+        if not export.available():
+            self.toast("Saving clips needs ffmpeg: sudo apt install ffmpeg")
+            return
+        if self._export is not None:
+            self.toast("A clip is already being saved")
+            return
+        dlg = Adw.AlertDialog(heading="Save portion",
+                              body=f"{fmt_time(start)} → {fmt_time(end)}  ({end - start:.1f} s)")
+        fast = Gtk.CheckButton(label="Fast: copy streams, lossless (cuts at nearest keyframe)", active=True)
+        precise = Gtk.CheckButton(label="Precise: exact frames, re-encode to MP4", group=fast)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.append(fast)
+        box.append(precise)
+        dlg.set_extra_child(box)
+        dlg.add_response("cancel", "Cancel")
+        dlg.add_response("save", "Choose file…")
+        dlg.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+        dlg.set_default_response("save")
+        dlg.set_close_response("cancel")
+
+        def on_response(_d, response):
+            if response == "save":
+                self._pick_export_file(entry, start, end, precise.get_active(), web)
+
+        dlg.connect("response", on_response)
+        dlg.present(self)
+
+    def _pick_export_file(self, entry, start, end, precise, web):
+        name = export.default_name(entry.title, start, end, precise, entry.uri,
+                                   self.engine.has_video())
+        if web and not precise:
+            name = name.rsplit(".", 1)[0] + ".mkv"
+        fd = Gtk.FileDialog(title="Save portion as", initial_name=name)
+        folder = uri_to_path(entry.uri)
+        start_dir = folder.parent if folder else Path(self.settings["screenshot_dir"]).expanduser().parent
+        if start_dir.is_dir():
+            fd.set_initial_folder(Gio.File.new_for_path(str(start_dir)))
+
+        def done(d, res):
+            try:
+                f = d.save_finish(res)
+            except GLib.Error:
+                return
+            self._run_export(entry, start, end, precise, web, Path(f.get_path()))
+
+        fd.save(self, None, done)
+
+    def _run_export(self, entry, start, end, precise, web, out):
+        cmd = export.build_command(entry.uri, start, end, out, precise, web_page=web)
+        self.lookup_action("export-cancel").set_enabled(True)
+        self.show_osd(f"Saving {out.name}…", 3000)
+
+        def progress(frac):
+            self.info_label.set_label(f"Saving clip {round(frac * 100)}%")
+            return False
+
+        def done(error):
+            self._export = None
+            self.lookup_action("export-cancel").set_enabled(False)
+            self._update_info()
+            if error == "cancelled":
+                out.unlink(missing_ok=True)
+                self.toast("Saving cancelled")
+            elif error:
+                self.toast(f"Could not save clip: {error}")
+            else:
+                toast = Adw.Toast(title=GLib.markup_escape_text(f"Saved {out.name}"), timeout=6,
+                                  button_label="Show")
+                toast.connect("button-clicked", lambda _t: Gtk.FileLauncher.new(
+                    Gio.File.new_for_path(str(out))).open_containing_folder(self, None, None))
+                self.toasts.add_toast(toast)
+            return False
+
+        self._export = export.Export(cmd, end - start, progress, done)
+
+    def cancel_export(self):
+        if self._export is not None:
+            self._export.cancel()
 
     def step_chapter(self, step):
         chapters = self.engine.chapters

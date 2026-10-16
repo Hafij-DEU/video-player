@@ -35,7 +35,7 @@ def make_media():
                          "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
                          "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000",
                          "-t", "90", "-map", "0:v", "-map", "1:a", "-map", "2:a",
-                         "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+                         "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-c:a", "aac",
                          "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=tur",
                          str(MEDIA / "a_clip.mkv")], check=True)
     (MEDIA / "a_clip.srt").write_text(
@@ -177,6 +177,7 @@ def scenario(app):
     win.unfullscreen()
     pump(0.3)
 
+    feature_checks(win)
     youtube_checks(win)
     whisper_checks(win)
 
@@ -184,6 +185,63 @@ def scenario(app):
     print(f"\n{len(results) - len(failed)}/{len(results)} passed", flush=True)
     app.exit_code = 1 if failed else 0
     app.quit()
+
+
+def _probe_duration(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                          "-of", "default=nw=1:nk=1", str(path)], capture_output=True, text=True)
+    try:
+        return float(out.stdout.strip())
+    except ValueError:
+        return None
+
+
+def feature_checks(win):
+    """Repeat button, folder play, picture in picture, recording a portion."""
+    e = win.engine
+
+    win.settings["loop_mode"] = "none"
+    win._update_repeat_ui()
+    seen = []
+    for _ in range(3):
+        win.activate_action("win.repeat-cycle", None)
+        seen.append(win.settings["loop_mode"])
+    check("repeat button cycles modes", seen == ["one", "playlist", "none"], str(seen))
+    win.activate_action("win.repeat-cycle", None)
+    check("repeat icon follows mode", win.repeat_btn.get_icon_name() == "media-playlist-repeat-song-symbolic")
+
+    win.open_uris([path_to_uri(MEDIA)], expand_folder=False)
+    check("folder play queues all media", wait_for(win, lambda: len(win.playlist) == 3 and e.playing),
+          f"({len(win.playlist)} items)")
+    win.settings["loop_mode"] = "playlist"
+
+    win.open_uris([path_to_uri(MEDIA / "a_clip.mkv")])
+    wait_for(win, lambda: e.playing and e.uri.endswith("a_clip.mkv") and (e.position() or 0) > 0.3)
+    win.activate_action("win.pip", None)
+    pump(0.6)
+    check("PiP window opens", win.pip is not None and win.pip.get_visible())
+    check("main window hidden in PiP", not win.get_visible())
+    check("video keeps playing in PiP", e.playing)
+    win.activate_action("win.pip", None)
+    pump(0.4)
+    check("PiP returns to main window", win.pip is None and win.get_visible())
+
+    e.seek(5)
+    wait_for(win, lambda: 4.9 < (e.position() or 0) < 6)
+    win.toggle_record()
+    check("record start marks position", win._rec_start is not None and "REC" in win.info_label.get_label())
+    win._rec_start = 5.0
+    entry = win.playlist.current
+    for precise, name in ((False, "fast.mkv"), (True, "precise.mp4")):
+        out = MEDIA / name
+        win._run_export(entry, 5.0, 9.0, precise, False, out)
+        ok = wait_for(win, lambda: win._export is None, 60)
+        dur = _probe_duration(out) if out.exists() else None
+        check(f"save portion ({'precise' if precise else 'fast'})",
+              ok and dur is not None and 3.0 < dur < 5.5, f"duration={dur}")
+    win._rec_start = None
+    win.record_btn.remove_css_class("recording")
+    win._update_info()
 
 
 def youtube_checks(win):

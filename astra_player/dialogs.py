@@ -190,6 +190,9 @@ def whisper_missing(win):
 SHORTCUTS = [
     ("Playback", [
         ("Space", "Play / pause"),
+        ("Ctrl+L", "Repeat: once / file / playlist"),
+        ("Ctrl+R", "Record: start, then stop and save that portion"),
+        ("Ctrl+Shift+R", "Save the A-B segment to a file"),
         ("F4  /  Ctrl+W", "Stop"),
         ("Left / Right", "Seek 5 s"),
         ("Ctrl+Left / Ctrl+Right", "Seek 30 s"),
@@ -227,7 +230,8 @@ SHORTCUTS = [
     ]),
     ("General", [
         ("Ctrl+O", "Open files"),
-        ("Ctrl+F", "Open folder"),
+        ("Ctrl+F", "Play a folder"),
+        ("Ctrl+P", "Picture in picture"),
         ("Ctrl+U", "Open URL"),
         ("Ctrl+Y", "Search YouTube"),
         ("Ctrl+V", "Play path or URL from clipboard"),

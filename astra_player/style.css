@@ -109,3 +109,37 @@ scale.seekbar marks indicator {
   color: var(--accent-color);
   font-weight: 700;
 }
+
+.controls button.recording {
+  color: #ff4d4d;
+  animation: rec-blink 1s steps(2, start) infinite;
+}
+
+@keyframes rec-blink {
+  to { opacity: 0.35; }
+}
+
+.controls button.active-toggle {
+  color: var(--accent-color);
+}
+
+.pip-window {
+  background-color: #000000;
+}
+
+button.pip-btn {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background-color: alpha(#000000, 0.6);
+}
+
+button.pip-btn:hover {
+  background-color: alpha(#000000, 0.8);
+}
+
+.pip-hint {
+  font-size: 10.5pt;
+}

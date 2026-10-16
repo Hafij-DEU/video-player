@@ -29,6 +29,7 @@ DEFAULTS = {
     "eq_enabled": False,
     "eq_bands": [0.0] * 10,
     "show_playlist": False,
+    "pip_hint_shown": False,
     "whisper_model": "base",  # tiny | base | small
     "whisper_language": "auto",
     "whisper_translate": False,
