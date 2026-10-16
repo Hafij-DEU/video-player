@@ -38,13 +38,34 @@ def _needs_ytdlp(uri):
     return ext_of(tail) not in STREAM_EXT
 
 
-def _resolve_ytdlp(uri):
-    """Return (title, playable_url) for a web page URL, or raise RuntimeError.
+YOUTUBE_HOSTS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+# Separate video (up to 1080p, no AV1: few GPUs decode it) and audio over plain
+# HTTPS. YouTube refuses its combined single-file formats (HTTP 403), and its
+# HLS ladder mixes VP9 and H.264, which stalls GStreamer when it switches.
+YOUTUBE_FORMAT = ("bv*[height<=1080][vcodec!^=av01][protocol=https]+ba[protocol=https]"
+                  "/bv*[height<=1080][protocol=https]+ba[protocol=https]")
 
-    Prefers an HLS master playlist: GStreamer plays it with adaptive quality and
-    separate audio, and YouTube now answers 403 to direct downloads of its
-    single-file formats. Sites without HLS fall back to the best single file.
+
+def _is_youtube(uri):
+    host = urllib.parse.urlsplit(uri).hostname or ""
+    return any(host == h or host.endswith("." + h) for h in YOUTUBE_HOSTS)
+
+
+def _resolve_ytdlp(uri):
+    """Return (title, video_url, audio_url_or_None) for a web page URL.
+
+    YouTube videos come as separate video and audio streams. Everything else
+    (and YouTube live streams) prefers an HLS master playlist, then the best
+    single file. Raises RuntimeError when yt-dlp fails.
     """
+    if _is_youtube(uri):
+        proc = subprocess.run(
+            ["yt-dlp", "--no-playlist", "--no-warnings", "-f", YOUTUBE_FORMAT,
+             "-O", "title", "-O", "urls", uri],
+            capture_output=True, text=True, timeout=60)
+        lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+        if proc.returncode == 0 and len(lines) >= 3:
+            return lines[0], lines[1], lines[2]
     proc = subprocess.run(
         ["yt-dlp", "--no-playlist", "--no-warnings",
          "-f", "best*[protocol^=m3u8]/bv*[protocol^=m3u8]/best[vcodec!=none][acodec!=none]/best",
@@ -53,7 +74,7 @@ def _resolve_ytdlp(uri):
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if proc.returncode != 0 or len(lines) < 2:
         raise RuntimeError((proc.stderr.strip().splitlines() or ["yt-dlp failed"])[-1])
-    return lines[0], _single_codec_master(lines[1])
+    return lines[0], _single_codec_master(lines[1]), None
 
 
 def _single_codec_master(url):
@@ -836,13 +857,13 @@ class PlayerWindow(Adw.ApplicationWindow):
 
             def worker():
                 try:
-                    title, direct = _resolve_ytdlp(entry.uri)
+                    title, direct, audio = _resolve_ytdlp(entry.uri)
                     err = None
                 except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
-                    title, direct, err = None, entry.uri, str(exc)
-                GLib.idle_add(finish, title, direct, err)
+                    title, direct, audio, err = None, entry.uri, None, str(exc)
+                GLib.idle_add(finish, title, direct, audio, err)
 
-            def finish(title, direct, err):
+            def finish(title, direct, audio, err):
                 if self._loading_index != idx:
                     return False
                 if title:
@@ -851,7 +872,10 @@ class PlayerWindow(Adw.ApplicationWindow):
                     self._refresh_playlist()
                 if err:
                     self.toast(f"yt-dlp: {err}")
-                self.engine.load(direct, entry.suburi, start)
+                if audio:
+                    self.engine.load(direct, audio, start, external_audio=True)
+                else:
+                    self.engine.load(direct, entry.suburi, start)
                 return False
 
             threading.Thread(target=worker, daemon=True).start()
@@ -875,6 +899,9 @@ class PlayerWindow(Adw.ApplicationWindow):
     def attach_subtitle(self, suburi):
         entry = self.playlist.current
         if entry is None:
+            return
+        if self.engine.external_audio:
+            self.toast("Subtitle files cannot be added to this online video")
             return
         entry.suburi = suburi
         self.engine.reload(suburi)

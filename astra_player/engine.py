@@ -164,15 +164,19 @@ class Engine(GObject.Object):
         self._loaded = False
         self._buffering = False
         self._suburi = None
+        self._external_audio = False  # suburi carries the audio of a web video
         self._start = 0.0
         self.hw_fallback = False
 
     # ---------------------------------------------------------------- loading
 
-    def load(self, uri, suburi=None, start=0.0, play=True):
+    def load(self, uri, suburi=None, start=0.0, play=True, external_audio=False):
+        """Play `uri`. With external_audio, `suburi` is a separate audio stream
+        (YouTube serves video and audio apart) instead of a subtitle file."""
         self.playbin.set_state(Gst.State.NULL)
         self.uri = uri
         self._suburi = suburi
+        self._external_audio = bool(external_audio and suburi)
         self._start = start or 0.0
         self.tags = {}
         self.chapters = []
@@ -188,7 +192,14 @@ class Engine(GObject.Object):
         if not self.uri:
             return
         pos = self.position() or 0.0
-        self.load(self.uri, suburi=suburi, start=pos, play=self.playing)
+        if self._external_audio:
+            suburi = self._suburi  # the slot holds the audio; keep it
+        self.load(self.uri, suburi=suburi, start=pos, play=self.playing,
+                  external_audio=self._external_audio)
+
+    @property
+    def external_audio(self):
+        return self._external_audio
 
     def stop(self):
         self.playbin.set_state(Gst.State.NULL)
@@ -238,6 +249,11 @@ class Engine(GObject.Object):
         if not self._loaded:
             self._pending_seek = seconds
             return
+        if self._external_audio:
+            # A seek in place leaves the second source silent for many seconds;
+            # starting fresh at the new spot brings video and audio back at once.
+            self.load(self.uri, self._suburi, start=seconds, play=self.playing, external_audio=True)
+            return
         flags = Gst.SeekFlags.FLUSH
         flags |= Gst.SeekFlags.ACCURATE if accurate else (Gst.SeekFlags.KEY_UNIT | Gst.SeekFlags.SNAP_NEAREST)
         self.playbin.seek(self.rate, Gst.Format.TIME, flags,
@@ -251,7 +267,9 @@ class Engine(GObject.Object):
     def set_rate(self, rate):
         self.rate = max(0.1, min(rate, 8.0))
         pos = self.position()
-        if pos is not None and self._loaded:
+        if pos is not None and self._loaded and self._external_audio:
+            self.load(self.uri, self._suburi, start=pos, play=self.playing, external_audio=True)
+        elif pos is not None and self._loaded:
             self.playbin.seek(self.rate, Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE,
                               Gst.SeekType.SET, int(pos * SECOND), Gst.SeekType.NONE, -1)
         return self.rate
@@ -442,7 +460,8 @@ class Engine(GObject.Object):
                 # Some VA-API drivers cannot hand frames to this display; decode in software.
                 set_hardware_decoding(False)
                 self.hw_fallback = True
-                GLib.idle_add(lambda: self.load(self.uri, self._suburi, self._start, self._pending_play) and False)
+                GLib.idle_add(lambda: self.load(self.uri, self._suburi, self._start, self._pending_play,
+                                                self._external_audio) and False)
                 return
             self.playbin.set_state(Gst.State.NULL)
             self._set_playing(False)
