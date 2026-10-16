@@ -169,8 +169,11 @@ class PlayerWindow(Adw.ApplicationWindow):
         panel.append(phead)
         panel.append(scroller)
         panel.append(ptools)
+        # hexpand=False stops the label's hexpand inside the panel from propagating
+        # up; otherwise the hidden panel takes half the spare width beside the video.
         self.playlist_revealer = Gtk.Revealer(child=panel, reveal_child=self.settings["show_playlist"],
-                                              transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT)
+                                              transition_type=Gtk.RevealerTransitionType.SLIDE_LEFT,
+                                              hexpand=False)
 
         main = Gtk.Box()
         main.append(self.overlay)
