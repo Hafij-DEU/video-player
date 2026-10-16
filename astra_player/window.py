@@ -35,10 +35,16 @@ def _needs_ytdlp(uri):
 
 
 def _resolve_ytdlp(uri):
-    """Return (title, direct_url) for a web page URL, or raise RuntimeError."""
+    """Return (title, playable_url) for a web page URL, or raise RuntimeError.
+
+    Prefers an HLS master playlist: GStreamer plays it with adaptive quality and
+    separate audio, and YouTube now answers 403 to direct downloads of its
+    single-file formats. Sites without HLS fall back to the best single file.
+    """
     proc = subprocess.run(
         ["yt-dlp", "--no-playlist", "--no-warnings",
-         "-f", "best[vcodec!=none][acodec!=none]/best", "-O", "title", "-O", "urls", uri],
+         "-f", "best*[protocol^=m3u8]/bv*[protocol^=m3u8]/best[vcodec!=none][acodec!=none]/best",
+         "-O", "title", "-O", "%(manifest_url,url)s", uri],
         capture_output=True, text=True, timeout=60)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if proc.returncode != 0 or len(lines) < 2:

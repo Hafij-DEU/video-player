@@ -43,7 +43,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.2.0_all.deb
+sudo apt install ./dist/astra-player_1.2.1_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
