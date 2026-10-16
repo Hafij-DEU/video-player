@@ -177,12 +177,48 @@ def scenario(app):
     win.unfullscreen()
     pump(0.3)
 
+    youtube_checks(win)
     whisper_checks(win)
 
     failed = [n for n, ok in results if not ok]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed", flush=True)
     app.exit_code = 1 if failed else 0
     app.quit()
+
+
+def youtube_checks(win):
+    """Search YouTube with a stand-in yt-dlp that prints canned results (no network)."""
+    fixture = Path(__file__).resolve().parent / "fixtures" / "ytsearch_lofi.jsonl"
+    fake_bin = MEDIA / "fake-bin"
+    fake_bin.mkdir()
+    fake = fake_bin / "yt-dlp"
+    fake.write_text(f"#!/bin/sh\nsleep 0.3\ncat '{fixture}'\n")
+    fake.chmod(0o755)
+    old_path = os.environ["PATH"]
+    os.environ["PATH"] = f"{fake_bin}{os.pathsep}{old_path}"
+    try:
+        check("Ctrl+Y opens YouTube search",
+              "<Control>y" in win.app.get_accels_for_action("win.youtube-search"))
+        win.open_typed("ytsearch:lofi")
+        pump(0.1)
+        dlg = win._search_dialog
+        check("search dialog shows spinner", dlg.stack.get_visible_child_name() == "searching"
+              and dlg.entry.get_text() == "lofi")
+        check("search results listed", wait_for(
+            win, lambda: dlg.stack.get_visible_child_name() == "results", 10)
+            and dlg.listbox.get_row_at_index(4) is not None, f"{len(dlg.results)} results")
+        before = len(win.playlist)
+        dlg.add(1)
+        last = win.playlist.entries[-1]
+        check("add to playlist keeps title", len(win.playlist) == before + 1
+              and last.uri.endswith("_jH2oTNRe7g") and last.title.startswith("cozy autumn"),
+              last.title)
+        dlg.dialog.close()
+        pump(0.3)
+        win.playlist.remove(len(win.playlist) - 1)
+        win._refresh_playlist()
+    finally:
+        os.environ["PATH"] = old_path
 
 
 def whisper_checks(win):

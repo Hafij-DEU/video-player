@@ -128,7 +128,7 @@ def show_media_info(win, text):
 
 
 def ask_url(win, callback):
-    dlg = Adw.AlertDialog(heading="Open URL", body="Stream address, YouTube link, or file path")
+    dlg = Adw.AlertDialog(heading="Open URL", body="Stream address, YouTube link, file path, or ytsearch:words")
     entry = Gtk.Entry(placeholder_text="https://…", activates_default=True, width_chars=46)
     clip = win.get_clipboard()
 
@@ -229,6 +229,7 @@ SHORTCUTS = [
         ("Ctrl+O", "Open files"),
         ("Ctrl+F", "Open folder"),
         ("Ctrl+U", "Open URL"),
+        ("Ctrl+Y", "Search YouTube"),
         ("Ctrl+V", "Play path or URL from clipboard"),
         ("F6", "Playlist"),
         ("Tab", "Show status"),

@@ -12,8 +12,9 @@ from pathlib import Path
 
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
-from . import dialogs, whisper
+from . import dialogs, whisper, youtube
 from .engine import FLIP_METHODS, Engine, discover
+from .search_dialog import SearchDialog
 from .playlist import (MEDIA_EXT, PLAYLIST_EXT, Playlist, display_name, expand, ext_of,
                        find_subtitle, fmt_time, folder_media, media_filter, path_to_uri,
                        subtitle_filter, to_uri, uri_to_path, write_playlist_file)
@@ -332,6 +333,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.open_menu.append("Open files…", "win.open")
         self.open_menu.append("Open folder…", "win.open-folder")
         self.open_menu.append("Open URL…", "win.open-url")
+        self.open_menu.append("Search YouTube…", "win.youtube-search")
         self.open_menu.append("Play from clipboard", "win.paste")
         self.open_menu.append_submenu("Recent", self.recent_menu)
 
@@ -494,7 +496,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("noop", simple(lambda: None)).set_enabled(False)
         add("open", simple(self.open_files_dialog))
         add("open-folder", simple(self.open_folder_dialog))
-        add("open-url", simple(lambda: dialogs.ask_url(self, lambda t: self.open_uris([to_uri(t)]))))
+        add("open-url", simple(lambda: dialogs.ask_url(self, self.open_typed)))
+        add("youtube-search", simple(self.search_youtube))
         add("paste", simple(self.play_clipboard))
         add("open-recent", lambda _a, p: self.open_uris([p.get_string()]), "s")
         add("clear-recent", simple(self._clear_recent))
@@ -627,6 +630,7 @@ class PlayerWindow(Adw.ApplicationWindow):
 
         for accel, action in (("<Ctrl>o", "win.open"), ("<Ctrl>f", "win.open-folder"),
                               ("<Ctrl>u", "win.open-url"), ("<Ctrl>v", "win.paste"),
+                              ("<Ctrl>y", "win.youtube-search"),
                               ("<Ctrl>e", "win.screenshot"), ("<Ctrl>F1", "win.media-info"),
                               ("F5", "win.preferences"), ("F1", "win.shortcuts"),
                               ("<Ctrl><Shift>s", "win.load-subtitle"), ("<Ctrl>q", "app.quit"),
@@ -804,13 +808,27 @@ class PlayerWindow(Adw.ApplicationWindow):
 
         self.get_clipboard().read_text_async(None, got)
 
-    def open_uris(self, uris, append=False, expand_folder=True):
+    def open_typed(self, text):
+        """Open what was typed in Open URL: a path, a URL, or "ytsearch:query"."""
+        query = youtube.search_query(text)
+        if query is not None:
+            self.search_youtube(query)
+        else:
+            self.open_uris([to_uri(text)])
+
+    def search_youtube(self, query=""):
+        if not youtube.have_ytdlp():
+            self.toast("Install yt-dlp to search and play YouTube (sudo apt install yt-dlp)")
+            return
+        self._search_dialog = SearchDialog(self, query).present()
+
+    def open_uris(self, uris, append=False, expand_folder=True, titles=None):
         uris = expand(uris)
         if not uris:
             self.toast("No playable media found")
             return
         if append:
-            first = self.playlist.add(uris)
+            first = self.playlist.add(uris, titles)
             self._refresh_playlist()
             if self.playlist.index < 0:
                 self.play_index(first)
@@ -824,7 +842,7 @@ class PlayerWindow(Adw.ApplicationWindow):
             siblings = folder_media(path.parent)
             if start_uri in siblings:
                 uris = siblings
-        self.playlist.add(uris)
+        self.playlist.add(uris, titles)
         self._refresh_playlist()
         self.play_index([e.uri for e in self.playlist.entries].index(start_uri))
 
@@ -851,6 +869,8 @@ class PlayerWindow(Adw.ApplicationWindow):
             start = self.settings.get_resume(entry.uri) or 0.0
         self._resumed_at = start
 
+        if _is_youtube(entry.uri) and not youtube.have_ytdlp():
+            self.toast("Install yt-dlp to play YouTube (sudo apt install yt-dlp)")
         if _needs_ytdlp(entry.uri):
             self.show_osd("Resolving link…", 30000)
             self._loading_index = idx

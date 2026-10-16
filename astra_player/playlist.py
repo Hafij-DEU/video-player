@@ -169,15 +169,18 @@ class Playlist:
         self.index = -1
         self._shuffle_order = []
 
-    def add(self, uris):
-        """Append URIs, skipping ones already queued. Returns index of the first given URI."""
+    def add(self, uris, titles=None):
+        """Append URIs, skipping ones already queued. Returns index of the first given URI.
+
+        ``titles`` optionally maps a URI to its display title (e.g. a search result).
+        """
         first = None
         known = {e.uri: i for i, e in enumerate(self.entries)}
         for uri in uris:
             if uri in known:
                 idx = known[uri]
             else:
-                self.entries.append(Entry(uri))
+                self.entries.append(Entry(uri, (titles or {}).get(uri)))
                 idx = len(self.entries) - 1
                 known[uri] = idx
             if first is None:

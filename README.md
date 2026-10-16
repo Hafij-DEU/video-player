@@ -19,6 +19,10 @@ from PotPlayer.
   APE, WavPack; MKV, MP4, MOV, AVI, TS/M2TS, WebM, FLV, OGG and more.
 - **Streams**: HTTP, HLS, DASH, RTSP, plus YouTube and other sites when
   `yt-dlp` is installed.
+- **YouTube search**: Open › *Search YouTube…* (Ctrl+Y) lists results with
+  thumbnails, channel, length and views. Play one or add it to the playlist.
+  It uses `yt-dlp`, so it needs no API key and no account. Typing
+  `ytsearch:words` in Open URL runs the same search.
 - **Subtitles**: embedded tracks and external `.srt .ass .ssa .vtt .sub .smi`,
   loaded automatically when the name matches the video. Includes delay
   adjustment, track switching and font choice.
@@ -43,7 +47,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.2.4_all.deb
+sudo apt install ./dist/astra-player_1.3.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
@@ -96,6 +100,7 @@ python3 -m astra_player video.mkv
 | W E / R T / Y U / I O, Q | Brightness / contrast / saturation / hue, reset |
 | Ctrl+E | Screenshot |
 | Ctrl+O, Ctrl+F, Ctrl+U, Ctrl+V | Open files, folder, URL, clipboard |
+| Ctrl+Y | Search YouTube |
 | F6 / F5 / Ctrl+F1 / Tab | Playlist / preferences / media info / status |
 | Right-click | Full menu |
 
@@ -112,10 +117,11 @@ DISPLAY=:77 GDK_BACKEND=x11 dbus-run-session python3 tests/gui_selftest.py
 `dbus-run-session` keeps the test from handing off to a Astra Player that is
 already open on your desktop.
 
-The Whisper unit tests need no display:
+The unit tests need no display and no network. The YouTube search test
+parses canned `yt-dlp` output from `tests/fixtures/`:
 
 ```bash
-python3 -m unittest tests/test_whisper.py
+python3 -m unittest tests/test_whisper.py tests/test_youtube.py
 ```
 
 The speech-recognition checks in both tests run only when a speech engine and a
