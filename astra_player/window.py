@@ -1,9 +1,13 @@
 """Main player window."""
 
+import hashlib
+import re
 import shutil
 import subprocess
 import threading
 import time
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
@@ -49,7 +53,54 @@ def _resolve_ytdlp(uri):
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if proc.returncode != 0 or len(lines) < 2:
         raise RuntimeError((proc.stderr.strip().splitlines() or ["yt-dlp failed"])[-1])
-    return lines[0], lines[1]
+    return lines[0], _single_codec_master(lines[1])
+
+
+def _single_codec_master(url):
+    """Keep one video codec in an HLS master playlist; return a URI to play.
+
+    YouTube lists every quality in both VP9 and H.264. GStreamer's HLS demuxer
+    switches between them as bandwidth changes, and the decoder cannot change
+    codec mid-stream, so playback freezes. Keep the H.264 variants (decoded in
+    hardware on most GPUs) or else the codec of the first variant, and write
+    the filtered playlist to a local file. Anything else is returned unchanged.
+    """
+    if not url.startswith("https://") or "m3u8" not in url and "/manifest/hls" not in url:
+        return url
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            text = resp.read(2_000_000).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return url
+    lines = text.splitlines()
+    variants = [i for i, ln in enumerate(lines) if ln.startswith("#EXT-X-STREAM-INF")]
+    families = []
+    for i in variants:
+        codecs = re.search(r'CODECS="([^"]*)"', lines[i])
+        video = [c.split(".")[0] for c in (codecs.group(1) if codecs else "").split(",")
+                 if not c.strip().startswith(("mp4a", "opus", "ac-3", "ec-3"))]
+        families.append(video[0].strip() if video else "")
+    if len(set(families)) < 2:
+        return url
+    keep = "avc1" if "avc1" in families else families[0]
+    out, skip = [], set()
+    for i, fam in zip(variants, families):
+        if fam != keep:
+            skip.update((i, i + 1))  # the tag and the URI line after it
+    for i, ln in enumerate(lines):
+        if i in skip:
+            continue
+        if ln and not ln.startswith("#"):
+            ln = urllib.parse.urljoin(url, ln)  # local file: make relative URIs absolute
+        elif 'URI="' in ln:
+            ln = re.sub(r'URI="([^"]*)"', lambda m: f'URI="{urllib.parse.urljoin(url, m.group(1))}"', ln)
+        out.append(ln)
+    folder = Path(GLib.get_user_runtime_dir() or GLib.get_tmp_dir()) / "astra-player"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{hashlib.sha1(url.encode()).hexdigest()[:16]}.m3u8"
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return path.as_uri()
 
 
 class PlayerWindow(Adw.ApplicationWindow):
