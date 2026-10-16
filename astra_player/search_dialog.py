@@ -7,6 +7,8 @@ import urllib.request
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 from . import youtube
+from .library import make_item
+from .library_dialog import choose_playlist
 
 THUMB_W, THUMB_H = 128, 72
 THUMB_THREADS = 4
@@ -30,6 +32,11 @@ class SearchDialog:
         bar = Gtk.Box(spacing=6, margin_start=12, margin_end=12, margin_top=6, margin_bottom=6)
         bar.append(self.entry)
         bar.append(go)
+        self.save_all_btn = Gtk.Button(icon_name="bookmark-new-symbolic", sensitive=False,
+                                       tooltip_text="Save all results as a playlist")
+        self.save_all_btn.connect("clicked", lambda _b: self.save_all())
+        bar.append(self.save_all_btn)
+        self._query = ""
 
         self.listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE,
                                    activate_on_single_click=True,
@@ -66,7 +73,7 @@ class SearchDialog:
         self.dialog.connect("closed", self._on_closed)
 
         group = Gio.SimpleActionGroup()
-        for name, fn in (("play", self.play), ("add", self.add)):
+        for name, fn in (("play", self.play), ("add", self.add), ("save", self.save)):
             act = Gio.SimpleAction.new(name, GLib.VariantType("i"))
             act.connect("activate", lambda _a, p, fn=fn: fn(p.get_int32()))
             group.add_action(act)
@@ -90,6 +97,8 @@ class SearchDialog:
         gen = self._gen
         self.listbox.remove_all()
         self.results = []
+        self._query = query
+        self.save_all_btn.set_sensitive(False)
         self.spinner.start()
         self.stack.set_visible_child_name("searching")
 
@@ -124,6 +133,7 @@ class SearchDialog:
             return False
         for i, res in enumerate(results):
             self.listbox.append(self._row(i, res))
+        self.save_all_btn.set_sensitive(True)
         self.stack.set_visible_child_name("results")
         self._start_thumbs(gen)
         return False
@@ -158,7 +168,8 @@ class SearchDialog:
         box.append(frame)
         box.append(text)
         box.append(button("media-playback-start-symbolic", "Play", "yt.play"))
-        box.append(button("list-add-symbolic", "Add to playlist", "yt.add"))
+        box.append(button("list-add-symbolic", "Add to play queue", "yt.add"))
+        box.append(button("bookmark-new-symbolic", "Save to a playlist", "yt.save"))
 
         row = Gtk.ListBoxRow(child=box, activatable=True)
         row.thumb = pic
@@ -167,8 +178,11 @@ class SearchDialog:
         it = Gio.MenuItem.new("Play", None)
         it.set_action_and_target_value("yt.play", GLib.Variant.new_int32(index))
         menu.append_item(it)
-        it = Gio.MenuItem.new("Add to playlist", None)
+        it = Gio.MenuItem.new("Add to play queue", None)
         it.set_action_and_target_value("yt.add", GLib.Variant.new_int32(index))
+        menu.append_item(it)
+        it = Gio.MenuItem.new("Save to a playlist…", None)
+        it.set_action_and_target_value("yt.save", GLib.Variant.new_int32(index))
         menu.append_item(it)
         popover = Gtk.PopoverMenu.new_from_model(menu)
         popover.set_has_arrow(False)
@@ -237,6 +251,33 @@ class SearchDialog:
             res = self.results[index]
             self.win.open_uris([res.url], append=True, titles={res.url: res.title})
             self.toast(f"Added to playlist: {res.title}")
+
+    @staticmethod
+    def _item(res):
+        return make_item(res.url, res.title, res.duration, res.thumbnail)
+
+    def save(self, index):
+        if not 0 <= index < len(self.results):
+            return
+        res = self.results[index]
+
+        def done(pl, _created):
+            added = self.win.library.add_items(pl.id, [self._item(res)])
+            self.toast(f"Saved to “{pl.name}”" if added else f"Already in “{pl.name}”")
+
+        choose_playlist(self.dialog, self.win.library, self._query, done, body=res.title)
+
+    def save_all(self):
+        if not self.results:
+            return
+        items = [self._item(r) for r in self.results]
+
+        def done(pl, _created):
+            added = self.win.library.add_items(pl.id, items)
+            self.toast(f"Saved {added} videos to “{pl.name}”")
+
+        choose_playlist(self.dialog, self.win.library, self._query, done,
+                        heading="Save results as playlist", body=f"{len(items)} videos")
 
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=GLib.markup_escape_text(text), timeout=4))

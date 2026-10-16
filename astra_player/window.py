@@ -14,6 +14,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Graphene, Gtk
 
 from . import dialogs, export, whisper, youtube
 from .engine import FLIP_METHODS, Engine, discover
+from .library import Library, make_item
 from .search_dialog import SearchDialog
 from .playlist import (MEDIA_EXT, PLAYLIST_EXT, Playlist, display_name, expand, ext_of,
                        find_subtitle, fmt_time, folder_media, media_filter, path_to_uri,
@@ -146,6 +147,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._eq_dialog = None
         self._color_dialog = None
         self.pip = None
+        self.library = Library()
         self._rec_start = None
         self._export = None
         self._whisper_cancel = None
@@ -236,7 +238,9 @@ class PlayerWindow(Adw.ApplicationWindow):
                 ("list-remove-symbolic", "Remove selected", "win.playlist-remove"),
                 ("edit-clear-all-symbolic", "Clear", "win.playlist-clear"),
                 ("view-sort-ascending-symbolic", "Sort by name", "win.playlist-sort"),
-                ("document-save-symbolic", "Save playlist", "win.playlist-save")):
+                ("document-save-symbolic", "Export as M3U file", "win.playlist-save"),
+                ("bookmark-new-symbolic", "Save queue to a saved playlist", "win.save-queue"),
+                ("view-list-bullet-symbolic", "Saved playlists (Ctrl+B)", "win.library")):
             b = Gtk.Button(icon_name=icon, tooltip_text=tip, action_name=action,
                            css_classes=["flat"], focus_on_click=False)
             ptools.append(b)
@@ -344,6 +348,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.open_menu.append("Open URL…", "win.open-url")
         self.open_menu.append("Search YouTube…", "win.youtube-search")
         self.open_menu.append("Play from clipboard", "win.paste")
+        self.open_menu.append("Saved playlists…", "win.library")
         self.open_menu.append_submenu("Recent", self.recent_menu)
 
         speed = Gio.Menu()
@@ -444,6 +449,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.main_menu.append_section(None, sec)
         sec = Gio.Menu()
         sec.append("Playlist", "win.show-playlist")
+        sec.append("Saved playlists", "win.library")
         sec.append("Fullscreen", "win.fullscreen")
         sec.append("Picture in picture", "win.pip")
         sec.append("Media info", "win.media-info")
@@ -563,6 +569,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("playlist-sort", simple(self._playlist_sort))
         add("playlist-save", simple(self._playlist_save))
         add("repeat-cycle", simple(self.cycle_repeat))
+        add("library", simple(self.show_library))
+        add("save-queue", simple(self.save_queue_to_library))
         add("pip", simple(self.toggle_pip))
         add("record", simple(self.toggle_record))
         add("export-ab", simple(self.export_ab))
@@ -658,7 +666,8 @@ class PlayerWindow(Adw.ApplicationWindow):
                               ("<Ctrl><Shift>s", "win.load-subtitle"), ("<Ctrl>q", "app.quit"),
                               ("<Ctrl>w", "win.stop"), ("F4", "win.stop"),
                               ("<Ctrl>l", "win.repeat-cycle"), ("<Ctrl>p", "win.pip"),
-                              ("<Ctrl>r", "win.record"), ("<Ctrl><Shift>r", "win.export-ab")):
+                              ("<Ctrl>r", "win.record"), ("<Ctrl><Shift>r", "win.export-ab"),
+                              ("<Ctrl>b", "win.library")):
             self.app.set_accels_for_action(action, [accel])
 
     def _on_key(self, ctrl, keyval, keycode, state):
@@ -846,7 +855,7 @@ class PlayerWindow(Adw.ApplicationWindow):
             return
         self._search_dialog = SearchDialog(self, query).present()
 
-    def open_uris(self, uris, append=False, expand_folder=True, titles=None):
+    def open_uris(self, uris, append=False, expand_folder=True, titles=None, start_index=0):
         uris = expand(uris)
         if not uris:
             self.toast("No playable media found")
@@ -859,7 +868,7 @@ class PlayerWindow(Adw.ApplicationWindow):
             return
         self._save_resume()
         self.playlist.clear()
-        start_uri = uris[0]
+        start_uri = uris[min(max(start_index, 0), len(uris) - 1)]
         path = uri_to_path(start_uri)
         if (expand_folder and len(uris) == 1 and path is not None and self.settings["auto_add_folder"]
                 and ext_of(path) in MEDIA_EXT):
@@ -1368,6 +1377,35 @@ class PlayerWindow(Adw.ApplicationWindow):
         "one": ("media-playlist-repeat-song-symbolic", "Repeat this file"),
         "playlist": ("media-playlist-repeat-symbolic", "Repeat playlist"),
     }
+
+    # -------------------------------------------------- saved playlists
+
+    def show_library(self):
+        from .library_dialog import LibraryDialog
+        LibraryDialog(self).present()
+
+    def queue_items(self):
+        return [make_item(e.uri, e.title) for e in self.playlist.entries]
+
+    def play_saved(self, pl, start=0):
+        uris = [i["uri"] for i in pl.items]
+        titles = {i["uri"]: i["title"] for i in pl.items}
+        self.open_uris(uris, expand_folder=False, titles=titles, start_index=start)
+        self.show_osd(f"Playlist: {pl.name}")
+
+    def save_queue_to_library(self):
+        items = self.queue_items()
+        if not items:
+            self.toast("The play queue is empty")
+            return
+        from .library_dialog import choose_playlist
+
+        def done(pl, _created):
+            added = self.library.add_items(pl.id, items)
+            self.toast(f"Saved {added} item{'s' if added != 1 else ''} to “{pl.name}”")
+
+        choose_playlist(self, self.library, "My playlist", done,
+                        heading="Save queue to a playlist", body=f"{len(items)} items")
 
     def cycle_repeat(self):
         order = self.REPEAT_ORDER

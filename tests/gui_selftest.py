@@ -178,6 +178,7 @@ def scenario(app):
     pump(0.3)
 
     feature_checks(win)
+    library_checks(win)
     youtube_checks(win)
     whisper_checks(win)
 
@@ -244,6 +245,53 @@ def feature_checks(win):
     win._update_info()
 
 
+def library_checks(win):
+    """Saved playlists: create via the picker, play from an item, rename, delete, persist."""
+    from astra_player.library import Library, make_item
+    from astra_player.library_dialog import LibraryDialog, choose_playlist
+    e = win.engine
+    lib_path = MEDIA / "library" / "playlists.json"
+    win.library = Library(lib_path)
+
+    made = []
+    choose_playlist(win, win.library, "Road trip", lambda pl, created: made.append((pl, created)))
+    pump(0.3)
+    picker = win.get_visible_dialog()
+    picker.emit("response", "save")
+    pump(0.2)
+    check("picker creates a named playlist", made and made[0][1] and made[0][0].name == "Road trip")
+    pl = made[0][0]
+    win.library.add_items(pl.id, [make_item(path_to_uri(MEDIA / "a_clip.mkv"), "Clip A"),
+                                  make_item(path_to_uri(MEDIA / "b_hevc.mp4"), "Clip B")])
+
+    ui = LibraryDialog(win).present()
+    pump(0.4)
+    check("library lists saved playlists", ui.index_list.get_row_at_index(0) is not None
+          and ui.index_list.get_row_at_index(1) is None)
+    ui.open_playlist(pl.id)
+    pump(0.4)
+    check("playlist page lists items", ui.detail_list.get_row_at_index(1) is not None)
+    ui.play(pl.id, 1)
+    check("play saved playlist from item 2", wait_for(
+        win, lambda: e.playing and e.uri and e.uri.endswith("b_hevc.mp4"), 10)
+        and len(win.playlist) == 2 and win.playlist.current.title == "Clip B")
+
+    win.library.rename(pl.id, "Trip")
+    check("saved playlist survives restart", [p.name for p in Library(lib_path).playlists] == ["Trip"]
+          and len(Library(lib_path).playlists[0].items) == 2)
+
+    ui = LibraryDialog(win).present()
+    pump(0.3)
+    ui.delete(pl.id)
+    pump(0.3)
+    confirm = win.get_visible_dialog()
+    confirm.emit("response", "ok")
+    pump(0.2)
+    check("delete saved playlist", Library(lib_path).playlists == [])
+    ui.dialog.close()
+    pump(0.3)
+
+
 def youtube_checks(win):
     """Search YouTube with a stand-in yt-dlp that prints canned results (no network)."""
     fixture = Path(__file__).resolve().parent / "fixtures" / "ytsearch_lofi.jsonl"
@@ -271,6 +319,21 @@ def youtube_checks(win):
         check("add to playlist keeps title", len(win.playlist) == before + 1
               and last.uri.endswith("_jH2oTNRe7g") and last.title.startswith("cozy autumn"),
               last.title)
+        import astra_player.search_dialog as sd
+        real_choose = sd.choose_playlist
+        sd.choose_playlist = lambda _p, lib, name, cb, **_k: cb(lib.create(name), True)
+        try:
+            dlg.save_all()
+            dlg.save(0)
+        finally:
+            sd.choose_playlist = real_choose
+        saved = [p for p in win.library.playlists if p.name == "lofi"]
+        check("save search results as playlist", len(saved) == 1 and len(saved[0].items) == len(dlg.results)
+              and saved[0].items[1]["title"].startswith("cozy autumn"),
+              f"{len(saved[0].items) if saved else 0} items")
+        check("save one video to a playlist", saved and win.library.get(saved[0].id)
+              and sum(1 for p in win.library.playlists if p.name.startswith("lofi")) == 2
+              and len(win.library.playlists[-1].items) == 1)
         dlg.dialog.close()
         pump(0.3)
         win.playlist.remove(len(win.playlist) - 1)

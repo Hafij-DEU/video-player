@@ -140,6 +140,14 @@ button.pip-btn:hover {
   background-color: alpha(#000000, 0.8);
 }
 
+.pip-grip {
+  color: alpha(#ffffff, 0.8);
+  background-color: alpha(#000000, 0.5);
+  border-radius: 6px;
+  padding: 3px;
+  -gtk-icon-transform: rotate(-45deg);
+}
+
 .pip-hint {
   font-size: 10.5pt;
 }

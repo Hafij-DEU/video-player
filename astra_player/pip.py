@@ -5,7 +5,7 @@ twice. Wayland does not let an app place itself above other windows, so the
 window explains how to pin it (Alt+Space › Always on Top) the first time.
 """
 
-from gi.repository import Gdk, GLib, Gtk
+from gi.repository import Gdk, GLib, Graphene, Gtk
 
 
 class PipWindow(Gtk.Window):
@@ -34,25 +34,42 @@ class PipWindow(Gtk.Window):
         bar.append(button("media-seek-forward-symbolic", "Forward 10 s", lambda: player.seek_by(10)))
         top = Gtk.Box(spacing=6, halign=Gtk.Align.END, valign=Gtk.Align.START,
                       margin_top=8, margin_end=8)
-        top.append(button("view-restore-symbolic", "Back to full window (Esc)", player.leave_pip))
-        top.append(button("window-close-symbolic", "Stop and close", self._close_all))
-        self.controls = [bar, top]
+        top.append(button("view-restore-symbolic", "Back to the full window (Esc, double-click)",
+                          player.leave_pip))
+        top.append(button("view-fullscreen-symbolic", "Back to fullscreen (Enter)", self._to_fullscreen))
+        top.append(button("window-close-symbolic", "Pause and close picture in picture", self._close_all))
+        grip = Gtk.Image(icon_name="list-drag-handle-symbolic", halign=Gtk.Align.END,
+                         valign=Gtk.Align.END, margin_end=4, margin_bottom=4,
+                         css_classes=["pip-grip"], tooltip_text="Drag to resize",
+                         cursor=Gdk.Cursor.new_from_name("se-resize", None))
+        self.controls = [bar, top, grip]
         for w in self.controls:
             overlay.add_overlay(w)
         self.hint = Gtk.Label(css_classes=["osd", "pip-hint"], wrap=True, visible=False,
                               justify=Gtk.Justification.CENTER, halign=Gtk.Align.CENTER,
-                              valign=Gtk.Align.CENTER, margin_start=24, margin_end=24)
+                              valign=Gtk.Align.CENTER, margin_start=24, margin_end=24,
+                              can_target=False)
         overlay.add_overlay(self.hint)
         self.set_child(overlay)
 
-        # Drag anywhere to move, double-click to return, drag the bottom-right corner to resize.
-        drag = Gtk.GestureClick(button=1)
-        drag.connect("pressed", self._on_press)
-        overlay.add_controller(drag)
+        # The gestures sit on the picture only, so presses on the buttons stay clicks.
+        # Drag the video to move the window, double-click it to go back, drag the grip to resize.
+        self._moving = False
+        drag = Gtk.GestureDrag(button=1)
+        drag.connect("drag-begin", lambda *_: setattr(self, "_moving", False))
+        drag.connect("drag-update", self._on_drag)
+        picture.add_controller(drag)
+        dbl = Gtk.GestureClick(button=1)
+        dbl.connect("pressed", lambda _g, n, _x, _y: self.player.leave_pip() if n == 2 else None)
+        picture.add_controller(dbl)
+        resize = Gtk.GestureClick(button=1)
+        resize.connect("pressed", self._on_grip)
+        grip.add_controller(resize)
+
         motion = Gtk.EventControllerMotion()
         motion.connect("motion", lambda *_: self._show_controls())
-        motion.connect("leave", lambda *_: self._hide_controls())
-        overlay.add_controller(motion)
+        motion.connect("enter", lambda *_: self._show_controls())
+        self.add_controller(motion)
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_key)
         self.add_controller(keys)
@@ -63,7 +80,7 @@ class PipWindow(Gtk.Window):
         self.connect("close-request", self._on_close_request)
         self._state_id = player.engine.connect("state-changed", self._on_state)
         self._on_state(player.engine, player.engine.playing)
-        self._hide_controls()
+        self._show_controls(4000)
 
     def show_hint(self, text, ms=6000):
         self.hint.set_label(text)
@@ -73,26 +90,45 @@ class PipWindow(Gtk.Window):
     def _on_state(self, _engine, playing):
         self.play_btn.set_icon_name("media-playback-pause-symbolic" if playing else "media-playback-start-symbolic")
 
-    def _on_press(self, gesture, n_press, x, y):
-        if n_press == 2:
-            self.player.leave_pip()
-            return
+    def _event_info(self, gesture):
         surface = self.get_surface()
-        device = gesture.get_current_event_device()
-        if not isinstance(surface, Gdk.Toplevel) or device is None:
-            return
-        w, h = self.get_width(), self.get_height()
+        device = gesture.get_current_event_device() or gesture.get_device()
         event = gesture.get_current_event()
         ts = event.get_time() if event else Gdk.CURRENT_TIME
-        if x > w - 24 and y > h - 24:
-            surface.begin_resize(Gdk.SurfaceEdge.SOUTH_EAST, device, 1, x, y, ts)
-        else:
-            surface.begin_move(device, 1, x, y, ts)
+        return (surface if isinstance(surface, Gdk.Toplevel) else None), device, ts
+
+    def _on_drag(self, gesture, dx, dy):
+        if self._moving or dx * dx + dy * dy < 25:
+            return
+        surface, device, ts = self._event_info(gesture)
+        if surface is None or device is None:
+            return
+        self._moving = True
+        ok, x, y = gesture.get_start_point()
+        point = self.get_child().compute_point(self, Graphene.Point().init(x, y))
+        px, py = (point[1].x, point[1].y) if isinstance(point, tuple) else (x, y)
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        surface.begin_move(device, 1, px, py, ts)
+
+    def _on_grip(self, gesture, _n, _x, _y):
+        surface, device, ts = self._event_info(gesture)
+        if surface is None or device is None:
+            return
+        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        surface.begin_resize(Gdk.SurfaceEdge.SOUTH_EAST, device, 1,
+                             self.get_width() - 4, self.get_height() - 4, ts)
+
+    def _to_fullscreen(self):
+        player = self.player
+        player.leave_pip()
+        GLib.idle_add(lambda: player.fullscreen() or False)
 
     def _on_key(self, _ctrl, keyval, _code, _state):
         name = (Gdk.keyval_name(keyval) or "").lower()
         if name == "escape":
             self.player.leave_pip()
+        elif name in ("return", "kp_enter", "f11"):
+            self._to_fullscreen()
         elif name == "space":
             self.player.engine.toggle()
         elif name == "left":
@@ -103,12 +139,12 @@ class PipWindow(Gtk.Window):
             return False
         return True
 
-    def _show_controls(self):
+    def _show_controls(self, ms=2500):
         for w in self.controls:
             w.set_visible(True)
         if self._hide_id:
             GLib.source_remove(self._hide_id)
-        self._hide_id = GLib.timeout_add(2000, self._hide_controls)
+        self._hide_id = GLib.timeout_add(ms, self._hide_controls)
 
     def _hide_controls(self):
         self._hide_id = 0

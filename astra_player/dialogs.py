@@ -232,6 +232,7 @@ SHORTCUTS = [
         ("Ctrl+O", "Open files"),
         ("Ctrl+F", "Play a folder"),
         ("Ctrl+P", "Picture in picture"),
+        ("Ctrl+B", "Saved playlists"),
         ("Ctrl+U", "Open URL"),
         ("Ctrl+Y", "Search YouTube"),
         ("Ctrl+V", "Play path or URL from clipboard"),

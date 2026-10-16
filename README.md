@@ -39,8 +39,16 @@ from PotPlayer.
   set A and B, and save just that part to a new file. *Fast* copies the streams
   losslessly and cuts at the nearest keyframe. *Precise* re-encodes to MP4 and
   cuts on the exact frame. Works for YouTube too, through yt-dlp. Needs `ffmpeg`.
-- **Picture in picture** (Ctrl+P): a small borderless window you can drag and
-  resize from the corner. On GNOME, press Alt+Space › Always on Top to pin it.
+- **Saved playlists** (Ctrl+B): save YouTube search results (one video with the
+  bookmark button, or all results at once) or the current queue into named
+  playlists kept inside the player. Play any of them later from any item,
+  rename, reorder, remove items, or delete the whole playlist. Stored in
+  `~/.local/share/astra-player/playlists.json`.
+- **Picture in picture** (Ctrl+P): a small borderless window. Drag the video
+  to move it and the corner grip to resize it. Hover to show its buttons: back
+  10 s, play/pause, forward 10 s, back to the window (or double-click / Esc),
+  back to fullscreen (or Enter), and close. On GNOME, press Alt+Space › Always
+  on Top to pin it above other windows.
 - **Video**: brightness, contrast, saturation and hue; rotate and flip
   (follows phone rotation tags); aspect ratio presets; GLSL pixel shaders
   (sharpen, soften, grayscale, sepia, night vision and more); screenshots.
@@ -55,7 +63,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.4.0_all.deb
+sudo apt install ./dist/astra-player_1.5.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
@@ -111,6 +119,7 @@ python3 -m astra_player video.mkv
 | Ctrl+L | Repeat: once / file / playlist |
 | Ctrl+R, Ctrl+Shift+R | Record start/stop and save; save A-B segment |
 | Ctrl+P | Picture in picture |
+| Ctrl+B | Saved playlists |
 | Ctrl+Y | Search YouTube |
 | F6 / F5 / Ctrl+F1 / Tab | Playlist / preferences / media info / status |
 | Right-click | Full menu |
