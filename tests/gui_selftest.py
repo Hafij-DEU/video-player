@@ -258,6 +258,7 @@ def library_checks(win):
     pump(0.3)
     picker = win.get_visible_dialog()
     picker.emit("response", "save")
+    picker.close()
     pump(0.2)
     check("picker creates a named playlist", made and made[0][1] and made[0][0].name == "Road trip")
     pl = made[0][0]
@@ -286,6 +287,7 @@ def library_checks(win):
     pump(0.3)
     confirm = win.get_visible_dialog()
     confirm.emit("response", "ok")
+    confirm.close()
     pump(0.2)
     check("delete saved playlist", Library(lib_path).playlists == [])
     ui.dialog.close()
@@ -337,6 +339,27 @@ def youtube_checks(win):
         dlg.dialog.close()
         pump(0.3)
         win.playlist.remove(len(win.playlist) - 1)
+
+        # A rate-limited connection: yt-dlp answers with YouTube's bot check.
+        args_log = MEDIA / "ytdlp-args.txt"
+        fake.write_text("#!/bin/sh\n"
+                        f"echo \"$@\" >> '{args_log}'\n"
+                        "echo \"ERROR: [youtube] abc: Sign in to confirm you’re not a bot. "
+                        "Use --cookies-from-browser\" >&2\nexit 1\n")
+        from astra_player import youtube as yt
+        yt.cookie_source = ""
+        win.open_uris(["https://www.youtube.com/watch?v=abcdefghijk"])
+        check("bot check shows sign-in help", wait_for(
+            win, lambda: "sign-in needed" in (win.osd.get_label() or ""), 10)
+            and win.engine.uri is None, win.osd.get_label())
+        yt.cookie_source = "brave"
+        win.open_uris(["https://www.youtube.com/watch?v=abcdefghijk"])
+        wait_for(win, lambda: args_log.exists() and args_log.read_text().count("watch?v=") >= 4, 10)
+        check("browser sign-in passed to yt-dlp",
+              "--cookies-from-browser brave" in args_log.read_text().splitlines()[-1])
+        yt.cookie_source = ""
+        win.open_uris([path_to_uri(MEDIA / "a_clip.mkv")])
+        wait_for(win, lambda: win.engine.playing and (win.engine.position() or 0) > 0.2)
         win._refresh_playlist()
     finally:
         os.environ["PATH"] = old_path

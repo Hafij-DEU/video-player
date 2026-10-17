@@ -2,7 +2,7 @@
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
-from . import whisper
+from . import whisper, youtube
 from .engine import EQ_FREQS, EQ_PRESETS
 
 
@@ -285,6 +285,7 @@ class PreferencesDialog:
         subs.add(font_row)
         page.add(subs)
         page.add(self._whisper_group())
+        page.add(self._youtube_group())
 
         shots = Adw.PreferencesGroup(title="Screenshots")
         self.shot_row = Adw.ActionRow(title="Save folder", subtitle=s["screenshot_dir"])
@@ -351,6 +352,59 @@ class PreferencesDialog:
     def _open_models(self, _btn):
         whisper.MODELS_DIR.mkdir(parents=True, exist_ok=True)
         Gtk.FileLauncher(file=Gio.File.new_for_path(str(whisper.MODELS_DIR))).launch(self.win, None, None)
+
+    def _youtube_group(self):
+        group = Adw.PreferencesGroup(
+            title="YouTube",
+            description="If YouTube says “Sign in to confirm you’re not a bot”, let yt-dlp use "
+                        "the YouTube login of a browser you are signed in with. The cookies are "
+                        "read on this computer only and are never sent anywhere but YouTube.")
+        self._yt_sources = [("", "Off")] + [(spec, label) for label, spec in youtube.detect_browsers()]
+        current = self.win.settings["youtube_cookies"]
+        if current.startswith("file:"):
+            self._yt_sources.append((current, f"File: {current[5:].rsplit('/', 1)[-1]}"))
+        elif current and current not in [k for k, _ in self._yt_sources]:
+            self._yt_sources.append((current, current))
+        labels = [label for _k, label in self._yt_sources]
+        row = Adw.ComboRow(title="Use sign-in from", model=Gtk.StringList.new(labels))
+        keys = [k for k, _ in self._yt_sources]
+        row.set_selected(keys.index(current) if current in keys else 0)
+        row.connect("notify::selected", self._yt_source_changed)
+        self._yt_row = row
+        group.add(row)
+
+        file_row = Adw.ActionRow(title="Use a cookies.txt file",
+                                 subtitle="Exported from your browser in Netscape format")
+        pick = Gtk.Button(icon_name="document-open-symbolic", valign=Gtk.Align.CENTER,
+                          tooltip_text="Choose cookies.txt")
+        pick.connect("clicked", self._pick_cookies_file)
+        file_row.add_suffix(pick)
+        group.add(file_row)
+        return group
+
+    def _set_yt_source(self, source):
+        self.win.settings["youtube_cookies"] = source
+        youtube.cookie_source = source
+
+    def _yt_source_changed(self, row, _pspec):
+        idx = row.get_selected()
+        if 0 <= idx < len(self._yt_sources):
+            self._set_yt_source(self._yt_sources[idx][0])
+
+    def _pick_cookies_file(self, _btn):
+        fd = Gtk.FileDialog(title="Choose cookies.txt")
+
+        def done(d, res):
+            try:
+                f = d.open_finish(res)
+            except GLib.Error:
+                return
+            source = f"file:{f.get_path()}"
+            self._yt_sources.append((source, f"File: {f.get_basename()}"))
+            self._yt_row.get_model().append(f"File: {f.get_basename()}")
+            self._yt_row.set_selected(len(self._yt_sources) - 1)
+
+        fd.open(self.win, None, done)
 
     def _switch(self, title, key, subtitle=None, on_change=None):
         row = Adw.SwitchRow(title=title, active=self.win.settings[key])

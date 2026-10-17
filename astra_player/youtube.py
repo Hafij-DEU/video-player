@@ -8,6 +8,7 @@ import json
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 SEARCH_COUNT = 25
 # "ytsearch:lofi", "ytsearch10:lofi" (yt-dlp's own search syntax).
@@ -34,6 +35,65 @@ class Result:
 
 def have_ytdlp():
     return shutil.which("yt-dlp") is not None
+
+
+# ---------------------------------------------------------------- sign-in
+#
+# When YouTube rate-limits a connection it answers "Sign in to confirm you're
+# not a bot" (often after HTTP 429). yt-dlp can then reuse the YouTube login
+# of a local browser (--cookies-from-browser) or a cookies.txt export. This is
+# opt-in, set in Preferences, and the cookies never leave this computer.
+
+# Set from settings["youtube_cookies"]: "" (off), a yt-dlp browser spec such as
+# "brave" or "chrome:/home/u/.config/google-chrome-beta", or "file:/path/cookies.txt".
+cookie_source = ""
+
+_HOME = Path.home()
+_BROWSERS = [
+    ("Brave", "brave", [".config/BraveSoftware/Brave-Browser"]),
+    ("Google Chrome", "chrome", [".config/google-chrome"]),
+    ("Google Chrome Beta", "chrome", [".config/google-chrome-beta"]),
+    ("Google Chrome Dev", "chrome", [".config/google-chrome-unstable"]),
+    ("Chromium", "chromium", [".config/chromium", "snap/chromium/common/chromium"]),
+    ("Microsoft Edge", "edge", [".config/microsoft-edge"]),
+    ("Microsoft Edge Beta", "edge", [".config/microsoft-edge-beta"]),
+    ("Microsoft Edge Dev", "edge", [".config/microsoft-edge-dev"]),
+    ("Vivaldi", "vivaldi", [".config/vivaldi"]),
+    ("Opera", "opera", [".config/opera"]),
+    ("Firefox", "firefox", [".mozilla/firefox", "snap/firefox/common/.mozilla/firefox",
+                            ".var/app/org.mozilla.firefox/.mozilla/firefox"]),
+]
+# Folders yt-dlp finds on its own; anything else is passed as an explicit profile path.
+_DEFAULT_DIRS = {".config/BraveSoftware/Brave-Browser", ".config/google-chrome", ".config/chromium",
+                 ".config/microsoft-edge", ".config/vivaldi", ".config/opera", ".mozilla/firefox"}
+
+
+def detect_browsers(home=None):
+    """Return [(label, spec)] for browsers with a profile on this computer."""
+    home = Path(home) if home else _HOME
+    found = []
+    for label, name, dirs in _BROWSERS:
+        for rel in dirs:
+            if (home / rel).is_dir():
+                spec = name if rel in _DEFAULT_DIRS else f"{name}:{home / rel}"
+                found.append((label, spec))
+                break
+    return found
+
+
+def auth_args(source=None):
+    """yt-dlp arguments for the chosen sign-in source (empty when off)."""
+    source = cookie_source if source is None else source
+    if not source:
+        return []
+    if source.startswith("file:"):
+        return ["--cookies", source[5:]]
+    return ["--cookies-from-browser", source]
+
+
+def is_bot_block(message):
+    text = (message or "").lower()
+    return "not a bot" in text or "429" in text or "sign in to confirm" in text
 
 
 def search_query(text):
@@ -98,7 +158,7 @@ def parse_search_output(text):
 
 
 def search_command(query, count=SEARCH_COUNT):
-    return ["yt-dlp", "--flat-playlist", "--dump-json", "--no-warnings",
+    return ["yt-dlp", "--flat-playlist", "--dump-json", "--no-warnings", *auth_args(),
             f"ytsearch{count}:{query}"]
 
 

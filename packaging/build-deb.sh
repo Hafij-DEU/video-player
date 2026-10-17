@@ -44,7 +44,7 @@ Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-4.0 (>= 4.14), gir1.2-adw-1 (
  gstreamer1.0-plugins-ugly, gstreamer1.0-libav, gstreamer1.0-gtk4, gstreamer1.0-gl
 Replaces: kiln-player
 Conflicts: kiln-player
-Recommends: gstreamer1.0-plugins-extra, gstreamer1.0-pipewire, yt-dlp, whisper.cpp, ffmpeg
+Recommends: gstreamer1.0-plugins-extra, gstreamer1.0-pipewire, yt-dlp, whisper.cpp, ffmpeg, python3-secretstorage
 Suggests: libggml0-backend-vulkan
 Homepage: https://github.com/Hafij-DEU/video-player
 Description: free media player with every codec built in

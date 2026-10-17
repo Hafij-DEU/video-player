@@ -62,14 +62,14 @@ def _resolve_ytdlp(uri):
     """
     if _is_youtube(uri):
         proc = subprocess.run(
-            ["yt-dlp", "--no-playlist", "--no-warnings", "-f", YOUTUBE_FORMAT,
+            ["yt-dlp", "--no-playlist", "--no-warnings", *youtube.auth_args(), "-f", YOUTUBE_FORMAT,
              "-O", "title", "-O", "urls", uri],
             capture_output=True, text=True, timeout=60)
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         if proc.returncode == 0 and len(lines) >= 3:
             return lines[0], lines[1], lines[2]
     proc = subprocess.run(
-        ["yt-dlp", "--no-playlist", "--no-warnings",
+        ["yt-dlp", "--no-playlist", "--no-warnings", *(youtube.auth_args() if _is_youtube(uri) else []),
          "-f", "best*[protocol^=m3u8]/bv*[protocol^=m3u8]/best[vcodec!=none][acodec!=none]/best",
          "-O", "title", "-O", "%(manifest_url,url)s", uri],
         capture_output=True, text=True, timeout=60)
@@ -148,6 +148,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._color_dialog = None
         self.pip = None
         self.library = Library()
+        youtube.cookie_source = self.settings["youtube_cookies"]
         self._rec_start = None
         self._export = None
         self._whisper_cancel = None
@@ -928,6 +929,11 @@ class PlayerWindow(Adw.ApplicationWindow):
                     self.title_widget.set_title(title)
                     self._refresh_playlist()
                 if err:
+                    if youtube.is_bot_block(err):
+                        self.youtube_blocked(err)
+                        self.engine.stop()
+                        self.stack.set_visible_child_name("idle")
+                        return False
                     self.toast(f"yt-dlp: {err}")
                 if audio:
                     self.engine.load(direct, audio, start, external_audio=True)
@@ -1377,6 +1383,21 @@ class PlayerWindow(Adw.ApplicationWindow):
         "one": ("media-playlist-repeat-song-symbolic", "Repeat this file"),
         "playlist": ("media-playlist-repeat-symbolic", "Repeat playlist"),
     }
+
+    # ------------------------------------------------- YouTube sign-in
+
+    def youtube_blocked(self, err):
+        if youtube.cookie_source:
+            text = ("YouTube still asks to confirm you're not a bot. Open YouTube in the chosen "
+                    "browser, make sure you are signed in, then try again.")
+        else:
+            text = ("YouTube is limiting this connection and wants a signed-in session. "
+                    "Choose a browser you're signed in with in Preferences › YouTube, "
+                    "or wait a few hours.")
+        self.show_osd("YouTube: sign-in needed", 6000)
+        toast = Adw.Toast(title=GLib.markup_escape_text(text), timeout=12, button_label="Preferences")
+        toast.connect("button-clicked", lambda _t: dialogs.PreferencesDialog(self).present())
+        self.toasts.add_toast(toast)
 
     # -------------------------------------------------- saved playlists
 

@@ -139,5 +139,37 @@ class PlaylistTitleTest(unittest.TestCase):
         self.assertEqual([e.title for e in pl.entries], ["cozy autumn music", "a.mp4"])
 
 
+
+class SignInTest(unittest.TestCase):
+    def tearDown(self):
+        youtube.cookie_source = ""
+
+    def test_detect_browsers(self):
+        home = Path(tempfile.mkdtemp(prefix="astra-home-"))
+        (home / ".config/BraveSoftware/Brave-Browser").mkdir(parents=True)
+        (home / ".config/google-chrome-beta").mkdir(parents=True)
+        (home / "snap/firefox/common/.mozilla/firefox").mkdir(parents=True)
+        found = dict(youtube.detect_browsers(home))
+        self.assertEqual(found["Brave"], "brave")
+        self.assertEqual(found["Google Chrome Beta"], f"chrome:{home}/.config/google-chrome-beta")
+        self.assertEqual(found["Firefox"], f"firefox:{home}/snap/firefox/common/.mozilla/firefox")
+        self.assertNotIn("Google Chrome", found)
+
+    def test_auth_args(self):
+        self.assertEqual(youtube.auth_args(""), [])
+        self.assertEqual(youtube.auth_args("brave"), ["--cookies-from-browser", "brave"])
+        self.assertEqual(youtube.auth_args("file:/tmp/c.txt"), ["--cookies", "/tmp/c.txt"])
+        youtube.cookie_source = "chrome"
+        self.assertIn("--cookies-from-browser", youtube.search_command("lofi"))
+        youtube.cookie_source = ""
+        self.assertNotIn("--cookies-from-browser", youtube.search_command("lofi"))
+
+    def test_bot_block_detection(self):
+        self.assertTrue(youtube.is_bot_block(
+            "ERROR: [youtube] z5y8Clp_TdE: Sign in to confirm you’re not a bot. Use --cookies"))
+        self.assertTrue(youtube.is_bot_block("HTTP Error 429: Too Many Requests"))
+        self.assertFalse(youtube.is_bot_block("ERROR: Video unavailable"))
+
+
 if __name__ == "__main__":
     unittest.main()

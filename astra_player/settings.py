@@ -34,6 +34,7 @@ DEFAULTS = {
     "whisper_language": "auto",
     "whisper_translate": False,
     "whisper_gpu": False,
+    "youtube_cookies": "",  # "" | browser spec | "file:/path/cookies.txt"
 }
 
 # The app was called Kiln Player before 1.2.0.

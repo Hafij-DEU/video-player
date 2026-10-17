@@ -63,13 +63,29 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.5.0_all.deb
+sudo apt install ./dist/astra-player_1.5.1_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
 sets, so every codec is installed at that point.
 `gstreamer1.0-plugins-extra` (VA-API), `yt-dlp` and `whisper.cpp` are
 recommended extras.
+
+### YouTube says “Sign in to confirm you’re not a bot”
+
+YouTube sometimes rate-limits a connection (HTTP 429) and then refuses
+anonymous playback. In Preferences › YouTube, choose a browser you are signed
+in to YouTube with (Brave, Chrome, Chromium, Edge, Firefox, …) or a
+`cookies.txt` export. yt-dlp then reads that login on this computer. For
+Chrome-based browsers yt-dlp needs the `secretstorage` Python module to open
+the GNOME keyring:
+
+```bash
+sudo apt install python3-secretstorage      # for the apt yt-dlp
+pipx inject yt-dlp secretstorage            # for a pipx yt-dlp
+```
+
+Waiting a few hours also lifts the limit.
 
 ### Speech to subtitles
 
