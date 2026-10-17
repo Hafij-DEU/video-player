@@ -67,28 +67,82 @@ def folder_media(folder, recursive=False):
     return [path_to_uri(p) for p in sorted(files, key=lambda p: _natural_key(str(p)))]
 
 
-def find_subtitle(uri):
-    """Return the URI of a subtitle next to a local media file, e.g. movie.srt or movie.en.ass."""
+SUB_DIRS = {"subs", "sub", "subtitles", "subtitle", "srt"}
+_SXXEYY = re.compile(r"s(\d{1,2})[ ._-]?e(\d{1,3})", re.I)
+_NXNN = re.compile(r"(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)", re.I)
+_EP = re.compile(r"(?:^|[^a-z0-9])(?:e|ep|episode)[ ._-]?(\d{1,3})(?!\d)", re.I)
+
+
+def episode_code(name):
+    """(season, episode) from a file name, season None when only an episode is given."""
+    for rx in (_SXXEYY, _NXNN):
+        m = rx.search(name)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    m = _EP.search(name)
+    if m:
+        return None, int(m.group(1))
+    return None
+
+
+def _subtitle_files(folder, depth=0):
+    out = []
+    try:
+        entries = list(Path(folder).iterdir())
+    except OSError:
+        return out
+    for p in entries:
+        if p.is_file() and ext_of(p) in SUBTITLE_EXT and ext_of(p) != "txt":
+            out.append(p)
+        elif p.is_dir() and depth < 2 and (depth > 0 or p.name.lower() in SUB_DIRS):
+            out += _subtitle_files(p, depth + 1)
+    return out
+
+
+def find_subtitles(uri):
+    """Every subtitle near a local media file, best match first, as [(score, uri)].
+
+    Looks beside the file and in Subs/Subtitles folders (also Subs/<name>/).
+    score 0: same name; 1: same name plus a language tag (movie.en.srt);
+    2: same episode code (S01E02, 1x02, Ep02); 3: the only subtitle beside the
+    only video; 9: other subtitles in the folder (listed, never auto-loaded).
+    """
     path = uri_to_path(uri)
     if path is None:
-        return None
-    try:
-        siblings = list(path.parent.iterdir())
-    except OSError:
-        return None
+        return []
     stem = path.stem.lower()
-    candidates = []
-    for p in siblings:
-        e = ext_of(p)
-        if e not in SUBTITLE_EXT or p == path:
-            continue
+    ep = episode_code(path.stem)
+    subs = _subtitle_files(path.parent)
+    try:
+        videos = [p for p in path.parent.iterdir() if p.is_file() and ext_of(p) in VIDEO_EXT]
+    except OSError:
+        videos = [path]
+    ranked = []
+    for p in subs:
         name = p.name.lower()
-        if name.startswith(stem + ".") or p.stem.lower() == stem:
-            exact = p.stem.lower() == stem
-            candidates.append((0 if exact else 1, SUBTITLE_EXT.index(e), name, p))
-    if not candidates:
-        return None
-    return path_to_uri(sorted(candidates)[0][3])
+        in_named_dir = p.parent.name.lower() == stem
+        if p.stem.lower() == stem:
+            score = 0
+        elif name.startswith(stem + ".") or name.startswith(stem + "_") or in_named_dir:
+            score = 1
+        elif ep is not None and episode_code(p.stem) == ep:
+            score = 2
+        elif len(subs) == 1 and len(videos) <= 1:
+            score = 3
+        else:
+            score = 9
+        ranked.append((score, SUBTITLE_EXT.index(ext_of(p)), name, p))
+    ranked.sort()
+    return [(r[0], path_to_uri(r[3])) for r in ranked]
+
+
+def find_subtitle(uri):
+    """URI of the subtitle to load automatically for a local media file, or None."""
+    for score, sub in find_subtitles(uri):
+        if score <= 3:
+            return sub
+        break
+    return None
 
 
 def read_playlist_file(path):

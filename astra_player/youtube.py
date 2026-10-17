@@ -66,6 +66,7 @@ KEYRING_BROWSERS = {"brave", "chrome", "chromium", "edge", "opera", "vivaldi", "
 SECRETSTORAGE_HINT = ("Reading the sign-in of Chrome-based browsers needs the Python "
                       "secretstorage module: sudo apt install python3-secretstorage")
 _secretstorage = {}
+_ejs = {}
 
 
 def managed_path():
@@ -156,21 +157,76 @@ def ytdlp_candidates():
     return found + _on_path("yt-dlp")
 
 
+def has_ejs(program):
+    """True when this yt-dlp ships the YouTube challenge solver (yt-dlp-ejs).
+
+    The official zipapp and PyInstaller builds bundle it; a pip/pipx install
+    only has it when the yt-dlp-ejs package was added. Without it YouTube
+    answers "The page needs to be reloaded" or offers no formats.
+    """
+    if program in _ejs:
+        return _ejs[program]
+    ok = True
+    try:
+        import zipfile
+        if zipfile.is_zipfile(program):
+            with zipfile.ZipFile(program) as zf:
+                ok = any(n.startswith("yt_dlp_ejs/") for n in zf.namelist())
+        else:
+            py = interpreter(program)
+            if py is not None:
+                ok = subprocess.run([py, "-c", "import yt_dlp_ejs"], capture_output=True,
+                                    timeout=20).returncode == 0
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        ok = False
+    _ejs[program] = ok
+    return ok
+
+
 def ytdlp_path(source=None):
     """The yt-dlp to run for this sign-in source, or None when there is none.
 
-    The managed copy wins, unless the source needs secretstorage and only a
-    system copy has it.
+    Ranked by what it can do: the YouTube challenge solver, and secretstorage
+    when the sign-in source is a keyring browser. Ties keep the usual order
+    (managed copy first, then PATH order).
     """
     source = cookie_source if source is None else source
     found = ytdlp_candidates()
     if not found:
         return None
-    if needs_keyring(source):
-        for prog in found:
-            if has_secretstorage(prog):
-                return prog
-    return found[0]
+    keyring = needs_keyring(source)
+
+    def rank(prog):
+        ejs = has_ejs(prog)
+        keys = (not keyring) or has_secretstorage(prog)
+        return (ejs and keys) * 4 + ejs * 2 + keys
+
+    return max(found, key=rank)  # max keeps the first of equal ranks
+
+
+def ytdlp_command(source=None):
+    """argv prefix for running yt-dlp, e.g. ["/path/yt-dlp"].
+
+    When the best copy is a zipapp that has the solver but whose Python lacks
+    secretstorage, run that zipapp with another yt-dlp's Python that has it
+    (for example a pipx venv), so keyring cookies and the solver both work.
+    """
+    source = cookie_source if source is None else source
+    prog = ytdlp_path(source)
+    if prog is None:
+        return ["yt-dlp"]
+    if needs_keyring(source) and not has_secretstorage(prog):
+        import zipfile
+        try:
+            is_zip = zipfile.is_zipfile(prog)
+        except OSError:
+            is_zip = False
+        if is_zip:
+            for other in ytdlp_candidates():
+                py = interpreter(other)
+                if py and other != prog and has_secretstorage(other):
+                    return [py, prog]
+    return [prog]
 
 
 def keyring_missing(source=None):
@@ -279,16 +335,22 @@ cookie_source = ""
 
 _HOME = Path.home()
 _BROWSERS = [
-    ("Brave", "brave", [".config/BraveSoftware/Brave-Browser"]),
-    ("Google Chrome", "chrome", [".config/google-chrome"]),
+    # (label, yt-dlp name, profile folders: native, Snap, Flatpak)
+    ("Brave", "brave", [".config/BraveSoftware/Brave-Browser",
+                        "snap/brave/current/.config/BraveSoftware/Brave-Browser",
+                        ".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"]),
+    ("Google Chrome", "chrome", [".config/google-chrome",
+                                 ".var/app/com.google.Chrome/config/google-chrome"]),
     ("Google Chrome Beta", "chrome", [".config/google-chrome-beta"]),
     ("Google Chrome Dev", "chrome", [".config/google-chrome-unstable"]),
-    ("Chromium", "chromium", [".config/chromium", "snap/chromium/common/chromium"]),
-    ("Microsoft Edge", "edge", [".config/microsoft-edge"]),
+    ("Chromium", "chromium", [".config/chromium", "snap/chromium/common/chromium",
+                              ".var/app/org.chromium.Chromium/config/chromium"]),
+    ("Microsoft Edge", "edge", [".config/microsoft-edge",
+                                ".var/app/com.microsoft.Edge/config/microsoft-edge"]),
     ("Microsoft Edge Beta", "edge", [".config/microsoft-edge-beta"]),
     ("Microsoft Edge Dev", "edge", [".config/microsoft-edge-dev"]),
-    ("Vivaldi", "vivaldi", [".config/vivaldi"]),
-    ("Opera", "opera", [".config/opera"]),
+    ("Vivaldi", "vivaldi", [".config/vivaldi", ".var/app/com.vivaldi.Vivaldi/config/vivaldi"]),
+    ("Opera", "opera", [".config/opera", "snap/opera/current/.config/opera"]),
     ("Firefox", "firefox", [".mozilla/firefox", "snap/firefox/common/.mozilla/firefox",
                             ".var/app/org.mozilla.firefox/.mozilla/firefox"]),
 ]
@@ -297,17 +359,65 @@ _DEFAULT_DIRS = {".config/BraveSoftware/Brave-Browser", ".config/google-chrome",
                  ".config/microsoft-edge", ".config/vivaldi", ".config/opera", ".mozilla/firefox"}
 
 
+def has_cookie_db(folder):
+    """True when a browser profile folder really holds a cookie database.
+
+    Snap and Flatpak browsers leave a near-empty ~/.config folder behind (for
+    example only NativeMessagingHosts), so a folder alone proves nothing.
+    """
+    folder = Path(folder)
+    if not folder.is_dir():
+        return False
+    patterns = ("cookies.sqlite", "*/cookies.sqlite", "Cookies", "*/Cookies", "*/Network/Cookies")
+    for pattern in patterns:
+        if any(p.is_file() for p in folder.glob(pattern)):
+            return True
+    return False
+
+
 def detect_browsers(home=None):
-    """Return [(label, spec)] for browsers with a profile on this computer."""
+    """Return [(label, spec)] for browsers with a usable profile on this computer."""
     home = Path(home) if home else _HOME
     found = []
     for label, name, dirs in _BROWSERS:
         for rel in dirs:
-            if (home / rel).is_dir():
+            if has_cookie_db(home / rel):
                 spec = name if rel in _DEFAULT_DIRS else f"{name}:{home / rel}"
                 found.append((label, spec))
                 break
     return found
+
+
+def normalize_source(source, browsers=None):
+    """Point a saved bare browser name (e.g. "brave") at the profile that exists now.
+
+    Settings from older versions may say "brave" while Brave is a Snap; yt-dlp
+    then looks in an empty ~/.config folder and finds no cookies.
+    """
+    if not source or source.startswith("file:") or ":" in source:
+        return source
+    name = source.split("+", 1)[0]
+    for _label, spec in (detect_browsers() if browsers is None else browsers):
+        if spec == source:
+            return source
+    for _label, spec in (detect_browsers() if browsers is None else browsers):
+        if spec.split(":", 1)[0] == name:
+            return spec
+    return source
+
+
+JS_RUNTIMES = ("deno", "node", "bun", "quickjs")
+
+
+def js_args():
+    """Enable a JavaScript runtime so yt-dlp can solve YouTube's signature challenge.
+
+    yt-dlp only enables deno by default; node (often already installed) works too.
+    """
+    for name in JS_RUNTIMES:
+        if shutil.which(name):
+            return [] if name == "deno" else ["--js-runtimes", name]
+    return []
 
 
 def auth_args(source=None):
@@ -422,7 +532,7 @@ def parse_search_output(text):
 
 
 def search_command(query, count=SEARCH_COUNT):
-    return [ytdlp_path() or "yt-dlp", "--flat-playlist", "--dump-json", "--no-warnings", *auth_args(),
+    return [*ytdlp_command(), "--flat-playlist", "--dump-json", "--no-warnings", *auth_args(),
             f"ytsearch{count}:{query}"]
 
 

@@ -180,6 +180,7 @@ def scenario(app):
     pump(0.3)
 
     feature_checks(win)
+    v17_checks(win)
     library_checks(win)
     youtube_checks(win)
     whisper_checks(win)
@@ -245,6 +246,68 @@ def feature_checks(win):
     win._rec_start = None
     win.record_btn.remove_css_class("recording")
     win._update_info()
+
+
+def v17_checks(win):
+    """1.7: seek preview, fullscreen layout, clock, subtitles, unsupported files."""
+    from astra_player.engine import Engine  # noqa: F401  (import check)
+    e = win.engine
+    win.open_uris([path_to_uri(MEDIA / "a_clip.mkv")], expand_folder=False)
+    wait_for(win, lambda: e.playing and (e.position() or 0) > 0.3)
+
+    # Seek preview: a frame from the second pipeline lands in the overlay box.
+    win._on_seek_hover(None, win.seek.get_width() * 0.5, 4)
+    check("seek preview shows a frame", wait_for(
+        win, lambda: win.thumb_box.get_visible() and win.thumb_pic.get_paintable() is not None, 10))
+    win._hide_seek_preview()
+    check("seek preview hides", not win.thumb_box.get_visible())
+
+    # Fullscreen arrangement (the test X server has no window manager, so drive it directly).
+    win._arrange_controls(True)
+    check("fullscreen moves options to header", win.extras.get_parent() is win.header_extras
+          and win.controls.has_css_class("fs"))
+    win._arrange_controls(False)
+    check("window layout restored", win.extras.get_parent() is win.start_box)
+
+    win.activate_action("win.clock", GLib.Variant.new_string("always"))
+    pump(1.2)
+    check("clock shows the time", win.clock.get_visible() and ":" in win.clock.get_label())
+    win.activate_action("win.clock", GLib.Variant.new_string("fullscreen"))
+    pump(1.2)
+    check("clock hidden outside fullscreen", not win.clock.get_visible())
+
+    # Subtitle look reaches GStreamer's textoverlay.
+    check("subtitle overlay styled", wait_for(win, lambda: any(
+        ov.get_property("shaded-background") for ov in e._text_overlays), 5))
+    win.activate_action("win.sub-style", GLib.Variant.new_string("classic"))
+    check("classic style applied", all(not ov.get_property("shaded-background")
+                                      and ov.get_property("draw-outline") for ov in e._text_overlays))
+    win.activate_action("win.sub-style", GLib.Variant.new_string("modern"))
+    before = e.sub_style["ypos"]
+    win.activate_action("win.sub-up", None)
+    check("subtitle moves up", e.sub_style["ypos"] < before)
+    win.activate_action("win.sub-pos-reset", None)
+
+    # A second subtitle at the same time.
+    second = MEDIA / "a_clip.tr.srt"
+    second.write_text("1\n00:00:00,000 --> 00:01:30,000\nİkinci altyazı\n\n", encoding="utf-8")
+    win._refresh_folder_subs()
+    check("folder subtitles listed", win.folder_subs.get_n_items() >= 2)
+    win.set_second_subtitle(path_to_uri(second))
+    check("second subtitle shows", wait_for(
+        win, lambda: win.sub2_label.get_visible() and "altyazı" in win.sub2_label.get_label(), 5))
+    win.set_second_subtitle(None)
+    pump(0.3)
+    check("second subtitle off", not win.sub2_label.get_visible())
+    second.unlink()
+
+    # Unsupported input says so plainly.
+    bad = MEDIA / "broken.mkv"
+    bad.write_bytes(os.urandom(4096))
+    win.open_uris([path_to_uri(bad)], expand_folder=False)
+    check("unsupported file message", wait_for(
+        win, lambda: (win.osd.get_label() or "").startswith("Unsupported file"), 10), win.osd.get_label())
+    bad.unlink()
 
 
 def library_checks(win):

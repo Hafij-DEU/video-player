@@ -150,6 +150,11 @@ class Engine(GObject.Object):
         if vis is not None:
             self.playbin.set_property("vis-plugin", vis)
 
+        # Subtitle look: playsink creates textoverlay elements on demand; style each one.
+        self._text_overlays = []
+        self.sub_style = {"style": "modern", "color": "white", "ypos": 0.93}
+        self.playbin.connect("deep-element-added", self._on_element_added)
+
         bus = self.playbin.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self._on_message)
@@ -174,6 +179,7 @@ class Engine(GObject.Object):
         """Play `uri`. With external_audio, `suburi` is a separate audio stream
         (YouTube serves video and audio apart) instead of a subtitle file."""
         self.playbin.set_state(Gst.State.NULL)
+        self._text_overlays = []
         self.uri = uri
         self._suburi = suburi
         self._external_audio = bool(external_audio and suburi)
@@ -401,6 +407,38 @@ class Engine(GObject.Object):
     @subtitle_delay.setter
     def subtitle_delay(self, seconds):
         self.playbin.set_property("text-offset", int(seconds * SECOND))
+
+    # ------------------------------------------------------------- subtitle look
+
+    SUB_COLORS = {"white": 0xFFFFFFFF, "yellow": 0xFFFFE14D, "cyan": 0xFF7FE9FF}
+
+    def _on_element_added(self, _bin, _sub_bin, element):
+        factory = element.get_factory()
+        if factory and factory.get_name() == "textoverlay":
+            self._text_overlays.append(element)
+            GLib.idle_add(lambda: self._style_overlay(element) and False)
+
+    def _style_overlay(self, ov):
+        st = self.sub_style
+        modern = st["style"] == "modern"
+        ov.set_property("shaded-background", modern)
+        ov.set_property("shading-value", 150)
+        ov.set_property("draw-outline", not modern)
+        ov.set_property("draw-shadow", not modern)
+        ov.set_property("color", self.SUB_COLORS.get(st["color"], 0xFFFFFFFF))
+        Gst.util_set_object_arg(ov, "valignment", "position")
+        Gst.util_set_object_arg(ov, "halignment", "center")
+        Gst.util_set_object_arg(ov, "line-alignment", "center")
+        ov.set_property("ypos", max(0.03, min(st["ypos"], 1.0)))
+        ov.set_property("xpad", 24)
+
+    def set_subtitle_style(self, **changes):
+        self.sub_style.update(changes)
+        for ov in list(self._text_overlays):
+            try:
+                self._style_overlay(ov)
+            except TypeError:
+                self._text_overlays.remove(ov)
 
     def set_subtitle_font(self, desc):
         self.playbin.set_property("subtitle-font-desc", desc)

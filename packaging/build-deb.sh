@@ -12,8 +12,9 @@ install -d "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/lib/$PKG" \
   "$STAGE/usr/share/applications" "$STAGE/usr/share/icons/hicolor/scalable/apps" \
   "$STAGE/usr/share/doc/$PKG"
 
-# Application code (no caches, no bundled icon dir: the icon goes to hicolor).
-tar -C "$ROOT" --exclude='__pycache__' --exclude='*.pyc' --exclude='astra_player/icons' \
+# Application code (no caches). The bundled icons/ folder holds the action icons;
+# the app icon is also installed into hicolor below.
+tar -C "$ROOT" --exclude='__pycache__' --exclude='*.pyc' \
   -cf - astra_player | tar -C "$STAGE/usr/lib/$PKG" -xf -
 
 cat > "$STAGE/usr/bin/astra-player" <<'SH'

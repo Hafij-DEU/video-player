@@ -23,9 +23,15 @@ from PotPlayer.
   thumbnails, channel, length and views. Play one or add it to the playlist.
   It uses `yt-dlp`, so it needs no API key and no account. Typing
   `ytsearch:words` in Open URL runs the same search.
-- **Subtitles**: embedded tracks and external `.srt .ass .ssa .vtt .sub .smi`,
-  loaded automatically when the name matches the video. Includes delay
-  adjustment, track switching and font choice.
+- **Subtitles**: embedded tracks and external `.srt .ass .ssa .vtt .sub .smi`.
+  Picked up automatically from the video's folder or a `Subs`/`Subtitles`
+  subfolder: same name, name plus language (`movie.en.srt`), the same episode
+  code (`S01E02`, `1x02`, `Ep02`), or the only subtitle next to the only video.
+  All subtitles found are listed under Subtitles › *Subtitle files in this
+  folder*. Show **two subtitles at once** (Subtitles › *Second subtitle*), at
+  the top or above the first. Modern box or classic outline style, white,
+  yellow or cyan, four sizes, adjustable height (Alt+Up / Alt+Down); in
+  fullscreen they rise above the controls. Delay adjustment and Whisper too.
 - **Speech to subtitles**: Subtitles › *Generate subtitles (Whisper)…* turns
   the speech in the current file into `<name>.whisper.srt` beside it, offline,
   and loads it. Choose the model (tiny 78 MB, base 148 MB, small 488 MB),
@@ -49,6 +55,15 @@ from PotPlayer.
   10 s, play/pause, forward 10 s, back to the window (or double-click / Esc),
   back to fullscreen (or Enter), and close. On GNOME, press Alt+Space › Always
   on Top to pin it above other windows.
+- **Fullscreen**: a compact, see-through control panel centred at the bottom
+  (back 10 s, previous, play, next, forward 10 s, volume) with the other options
+  in the top bar. Hover the seek bar for a **preview frame**. A **clock** shows in
+  a corner in fullscreen (Menu › Clock: in fullscreen, always, or off).
+- **Save streams** (Ctrl+S): download the whole video (YouTube and other sites via
+  yt-dlp) or record a live stream until you stop it (Playback › Cancel saving).
+- **Unsupported files** just say "Unsupported file" instead of a technical error.
+- **Updates**: checks GitHub once a day and offers one-click updates; apt then
+  also installs any new recommended extras (switch it off in Preferences).
 - **Video**: brightness, contrast, saturation and hue; rotate and flip
   (follows phone rotation tags); aspect ratio presets; GLSL pixel shaders
   (sharpen, soften, grayscale, sepia, night vision and more); screenshots.
@@ -63,7 +78,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.6.0_all.deb
+sudo apt install ./dist/astra-player_1.7.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin

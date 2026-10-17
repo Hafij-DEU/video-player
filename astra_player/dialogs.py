@@ -295,6 +295,7 @@ SHORTCUTS = [
     ]),
     ("Subtitles", [
         ("Alt+H", "Show / hide subtitles"),
+        ("Alt+Up / Alt+Down", "Move subtitles up / down"),
         ("Alt+L", "Next subtitle track"),
         (",  /  .", "Subtitle delay ±0.5 s"),
         ("/", "Reset subtitle delay"),
@@ -316,6 +317,7 @@ SHORTCUTS = [
         ("Ctrl+F", "Play a folder"),
         ("Ctrl+P", "Picture in picture"),
         ("Ctrl+B", "Saved playlists"),
+        ("Ctrl+S", "Save the playing video or stream"),
         ("Ctrl+U", "Open URL"),
         ("Ctrl+Y", "Search YouTube"),
         ("Ctrl+V", "Play path or URL from clipboard"),
@@ -355,6 +357,8 @@ class PreferencesDialog:
         play.add(self._switch("Hardware video decoding (VA-API)", "hardware_decoding",
                               "Takes effect on the next file", self._hw_changed))
         play.add(self._spin("Short seek (seconds)", "seek_short", 1, 60))
+        play.add(self._switch("Check for new versions daily", "check_updates",
+                              "Reads the release list on GitHub; installs only when you press Update"))
         play.add(self._spin("Long seek (seconds)", "seek_long", 5, 600))
         page.add(play)
 

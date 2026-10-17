@@ -149,9 +149,12 @@ class SignInTest(unittest.TestCase):
 
     def test_detect_browsers(self):
         home = Path(tempfile.mkdtemp(prefix="astra-home-"))
-        (home / ".config/BraveSoftware/Brave-Browser").mkdir(parents=True)
-        (home / ".config/google-chrome-beta").mkdir(parents=True)
-        (home / "snap/firefox/common/.mozilla/firefox").mkdir(parents=True)
+        for rel, db in ((".config/BraveSoftware/Brave-Browser/Default", "Cookies"),
+                        (".config/google-chrome-beta/Profile 1/Network", "Cookies"),
+                        ("snap/firefox/common/.mozilla/firefox/abc.default", "cookies.sqlite")):
+            (home / rel).mkdir(parents=True)
+            (home / rel / db).write_bytes(b"x")
+        (home / ".config/google-chrome/NativeMessagingHosts").mkdir(parents=True)
         found = dict(youtube.detect_browsers(home))
         self.assertEqual(found["Brave"], "brave")
         self.assertEqual(found["Google Chrome Beta"], f"chrome:{home}/.config/google-chrome-beta")
@@ -238,8 +241,12 @@ class YtdlpPathTest(unittest.TestCase):
         # Stand-in interpreters: "import secretstorage" succeeds with one, fails with the other.
         self.py_ok = _script(self.tmp / "python-ok", "#!/bin/sh\nexit 0\n")
         self.py_no = _script(self.tmp / "python-no", "#!/bin/sh\nexit 1\n")
+        # These fakes are about secretstorage; treat every copy as having the solver.
+        self._has_ejs = youtube.has_ejs
+        youtube.has_ejs = lambda _p: True
 
     def tearDown(self):
+        youtube.has_ejs = self._has_ejs
         youtube.MANAGED_DIR, youtube.managed_enabled, os.environ["PATH"], cache = self.saved
         youtube._secretstorage.clear()
         youtube._secretstorage.update(cache)
@@ -424,6 +431,54 @@ class DownloadTest(unittest.TestCase):
             youtube.update_managed()
         self.assertEqual(youtube.managed_path().read_bytes(), self.PAYLOAD)
         self.assertEqual(youtube.managed_version(), "2026.10.01")
+
+
+
+class SnapAndRuntimeTest(unittest.TestCase):
+    def setUp(self):
+        self.saved = (youtube.cookie_source, youtube.ytdlp_candidates, youtube.has_ejs,
+                      youtube.has_secretstorage, youtube.interpreter, shutil_which)
+
+    def tearDown(self):
+        (youtube.cookie_source, youtube.ytdlp_candidates, youtube.has_ejs,
+         youtube.has_secretstorage, youtube.interpreter, _w) = self.saved
+        youtube.shutil.which = _w
+
+    def test_stub_config_folder_is_ignored_and_snap_found(self):
+        home = Path(tempfile.mkdtemp(prefix="astra-home-"))
+        (home / ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts").mkdir(parents=True)
+        snap = home / "snap/brave/current/.config/BraveSoftware/Brave-Browser/Default"
+        snap.mkdir(parents=True)
+        (snap / "Cookies").write_bytes(b"SQLite format 3\0")
+        found = dict(youtube.detect_browsers(home))
+        self.assertEqual(found["Brave"], f"brave:{home}/snap/brave/current/.config/BraveSoftware/Brave-Browser")
+        browsers = list(youtube.detect_browsers(home))
+        self.assertEqual(youtube.normalize_source("brave", browsers), found["Brave"])
+        self.assertEqual(youtube.normalize_source("file:/x.txt", browsers), "file:/x.txt")
+        self.assertEqual(youtube.normalize_source("", browsers), "")
+
+    def test_js_runtime_arg(self):
+        youtube.shutil.which = lambda n: "/usr/bin/node" if n == "node" else None
+        self.assertEqual(youtube.auth_args("brave"), ["--cookies-from-browser", "brave"])
+        self.assertEqual(youtube.js_args(), ["--js-runtimes", "node"])
+        youtube.shutil.which = lambda n: "/usr/bin/deno" if n == "deno" else None
+        self.assertEqual(youtube.js_args(), [])
+
+    def test_prefers_copy_with_solver_and_borrows_keyring_python(self):
+        managed = Path(tempfile.mkdtemp()) / "yt-dlp"
+        import zipfile
+        with zipfile.ZipFile(managed, "w") as zf:
+            zf.writestr("yt_dlp_ejs/__init__.py", "")
+        youtube.ytdlp_candidates = lambda: [str(managed), "/pipx/bin/yt-dlp"]
+        youtube.has_ejs = lambda p: p == str(managed)
+        youtube.has_secretstorage = lambda p: p == "/pipx/bin/yt-dlp"
+        youtube.interpreter = lambda p: "/pipx/venv/bin/python" if p == "/pipx/bin/yt-dlp" else "/usr/bin/python3"
+        self.assertEqual(youtube.ytdlp_path("brave"), str(managed))
+        self.assertEqual(youtube.ytdlp_command("brave"), ["/pipx/venv/bin/python", str(managed)])
+        self.assertEqual(youtube.ytdlp_command("firefox"), [str(managed)])
+
+
+shutil_which = youtube.shutil.which
 
 
 if __name__ == "__main__":

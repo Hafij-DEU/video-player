@@ -29,6 +29,13 @@ DEFAULTS = {
     "eq_enabled": False,
     "eq_bands": [0.0] * 10,
     "show_playlist": False,
+    "show_clock": "fullscreen",  # fullscreen | always | off
+    "check_updates": True,
+    "update_last_check": 0,
+    "sub_style": "modern",  # modern (box) | classic (outline)
+    "sub_color": "white",
+    "sub_pos": 0.93,  # 0 top .. 1 bottom
+    "sub2_pos": "top",  # top | bottom
     "pip_hint_shown": False,
     "whisper_model": "base",  # tiny | base | small
     "whisper_language": "auto",

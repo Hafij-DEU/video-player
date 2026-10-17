@@ -55,8 +55,8 @@ def build_command(source, start, end, out_path, precise, web_page=False):
     dur = max(end - start, 0.05)
     out = str(out_path)
     if web_page:
-        from .youtube import auth_args, ytdlp_path
-        cmd = [ytdlp_path() or "yt-dlp", "--no-playlist", "--newline", "--no-warnings", "--force-overwrites", *auth_args(),
+        from .youtube import auth_args, js_args, ytdlp_command
+        cmd = [*ytdlp_command(), "--no-playlist", "--newline", "--no-warnings", "--force-overwrites", *auth_args(), *js_args(),
                "--download-sections", f"*{start:.3f}-{end:.3f}",
                "-f", "bv*+ba/b", "-o", out]
         if precise:
@@ -81,6 +81,22 @@ def build_command(source, start, end, out_path, precise, web_page=False):
             cmd += ["-map", "-0:s", "-map", "-0:d", "-movflags", "+faststart"]
         cmd.append(out)
     return cmd
+
+
+def build_download(source, out_path, web_page=False):
+    """argv that saves a whole video (web page via yt-dlp) or stream (ffmpeg copy)."""
+    out = str(out_path)
+    if web_page:
+        from .youtube import auth_args, js_args, ytdlp_command
+        cmd = [*ytdlp_command(), "--no-playlist", "--newline", "--no-warnings", "--force-overwrites",
+               *auth_args(), *js_args(), "-f", "bv*+ba/b", "-o", out]
+        if out.endswith((".mp4", ".mkv", ".webm")):
+            cmd += ["--merge-output-format", out.rsplit(".", 1)[1]]
+        return cmd + [source]
+    path = uri_to_path(source)
+    src = str(path) if path is not None else source
+    return ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats",
+            "-i", src, "-map", "0", "-c", "copy", out]
 
 
 class Export:

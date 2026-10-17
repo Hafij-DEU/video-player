@@ -16,8 +16,9 @@ from .engine import FLIP_METHODS, Engine, discover
 from .library import Library, make_item
 from .search_dialog import SearchDialog
 from .playlist import (MEDIA_EXT, PLAYLIST_EXT, Playlist, display_name, expand, ext_of,
-                       find_subtitle, fmt_time, folder_media, media_filter, path_to_uri,
+                       find_subtitle, find_subtitles, fmt_time, folder_media, media_filter, path_to_uri,
                        subtitle_filter, to_uri, uri_to_path, write_playlist_file)
+from . import subparse
 from .shaders import SHADERS
 
 SPEEDS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 4.0]
@@ -59,20 +60,22 @@ def _resolve_ytdlp(uri):
     (and YouTube live streams) prefers an HLS master playlist, then the best
     single file. Raises RuntimeError with the end of yt-dlp's error output when it fails.
     """
-    ytdlp = youtube.ytdlp_path() or "yt-dlp"
+    ytdlp = youtube.ytdlp_command()
     if _is_youtube(uri):
         proc = subprocess.run(
-            [ytdlp, "--no-playlist", "--no-warnings", *youtube.auth_args(), "-f", YOUTUBE_FORMAT,
+            [*ytdlp, "--no-playlist", "--no-warnings", *youtube.auth_args(), *youtube.js_args(),
+             "-f", YOUTUBE_FORMAT,
              "-O", "title", "-O", "urls", uri],
-            capture_output=True, text=True, timeout=60)
+            capture_output=True, text=True, timeout=120)
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         if proc.returncode == 0 and len(lines) >= 3:
             return lines[0], lines[1], lines[2]
     proc = subprocess.run(
-        [ytdlp, "--no-playlist", "--no-warnings", *(youtube.auth_args() if _is_youtube(uri) else []),
+        [*ytdlp, "--no-playlist", "--no-warnings",
+         *((youtube.auth_args() + youtube.js_args()) if _is_youtube(uri) else []),
          "-f", "best*[protocol^=m3u8]/bv*[protocol^=m3u8]/best[vcodec!=none][acodec!=none]/best",
          "-O", "title", "-O", "%(manifest_url,url)s", uri],
-        capture_output=True, text=True, timeout=60)
+        capture_output=True, text=True, timeout=120)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if proc.returncode != 0 or len(lines) < 2:
         errors = [ln for ln in proc.stderr.strip().splitlines() if ln.strip()]
@@ -149,7 +152,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._color_dialog = None
         self.pip = None
         self.library = Library()
-        youtube.cookie_source = self.settings["youtube_cookies"]
+        source = youtube.normalize_source(self.settings["youtube_cookies"])
+        self.settings["youtube_cookies"] = youtube.cookie_source = source
         youtube.managed_enabled = self.settings["ytdlp_managed"]
         self._yt_attempt = None  # browser fallback in progress: {"uri", "original", "queue"}
         self._ytdlp_job = None
@@ -162,6 +166,11 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.engine.mute = self.settings["muted"]
         self.engine.set_eq(self.settings["eq_bands"], self.settings["eq_enabled"])
         self.engine.set_subtitle_font(self.settings["subtitle_font"])
+        self.engine.set_subtitle_style(style=self.settings["sub_style"], color=self.settings["sub_color"],
+                                       ypos=self.settings["sub_pos"])
+        self._sub2 = None          # subparse.Cues of the second subtitle
+        self._sub2_delay = 0.0
+        self._sub_lift = 0.0
         for sig, cb in (("state-changed", self._on_state), ("eos", self._on_eos),
                         ("error", self._on_error), ("loaded", self._on_loaded),
                         ("tags-changed", self._on_tags), ("buffering", self._on_buffering)):
@@ -266,6 +275,9 @@ class PlayerWindow(Adw.ApplicationWindow):
         main.append(self.playlist_revealer)
 
         # Controls -------------------------------------------------------------
+        # One set of widgets, arranged two ways: a full bar in a window; in
+        # fullscreen a compact see-through panel centred at the bottom with only
+        # the transport, while the other options move up into the header.
         self.pos_label = Gtk.Label(label="00:00", css_classes=["time", "numeric"])
         self.dur_label = Gtk.Label(label="00:00", css_classes=["time", "numeric"])
         self.seek = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 1, 1)
@@ -274,8 +286,11 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.seek.set_focusable(False)
         self.seek.add_css_class("seekbar")
         self.seek.connect("change-value", self._on_seek_drag)
-        self.seek.set_has_tooltip(True)
-        self.seek.connect("query-tooltip", self._on_seek_tooltip)
+        seek_motion = Gtk.EventControllerMotion()
+        seek_motion.connect("motion", self._on_seek_hover)
+        seek_motion.connect("leave", lambda *_: self._hide_seek_preview())
+        self.seek.add_controller(seek_motion)
+        self._build_seek_preview()
         seek_row = Gtk.Box(spacing=8)
         seek_row.append(self.pos_label)
         seek_row.append(self.seek)
@@ -285,34 +300,42 @@ class PlayerWindow(Adw.ApplicationWindow):
             return Gtk.Button(icon_name=icon, tooltip_text=tip, action_name=action,
                               css_classes=["flat", "ctl"], focus_on_click=False, focusable=False)
 
-        self.play_btn = btn("media-playback-start-symbolic", "Play / pause (Space)", "win.toggle")
-        self.play_btn.add_css_class("play")
-        row = Gtk.Box(spacing=2)
-        for w in (self.play_btn,
-                  btn("media-playback-stop-symbolic", "Stop (F4)", "win.stop"),
-                  btn("media-skip-backward-symbolic", "Previous (Page Up)", "win.previous"),
-                  btn("media-skip-forward-symbolic", "Next (Page Down)", "win.next"),
-                  btn("document-open-symbolic", "Open files (Ctrl+O)", "win.open"),
-                  btn("folder-videos-symbolic", "Play a folder (Ctrl+F)", "win.open-folder")):
-            row.append(w)
-        self.repeat_btn = btn("media-playlist-repeat-symbolic", "Repeat (Ctrl+L)", "win.repeat-cycle")
-        row.append(self.repeat_btn)
-        self.record_btn = btn("media-record-symbolic", "Record a portion (Ctrl+R)", "win.record")
-        row.append(self.record_btn)
-        self.info_label = Gtk.Label(css_classes=["badge-info"], hexpand=True, xalign=0.5)
-        row.append(self.info_label)
-
         def menu_btn(icon, tip, model):
             return Gtk.MenuButton(icon_name=icon, tooltip_text=tip, menu_model=model,
                                   css_classes=["flat", "ctl"], focus_on_click=False,
                                   direction=Gtk.ArrowType.UP)
 
-        row.append(menu_btn("media-view-subtitles-symbolic", "Subtitles", self.subtitle_menu))
-        row.append(menu_btn("audio-x-generic-symbolic", "Audio", self.audio_menu))
-        row.append(menu_btn("applications-graphics-symbolic", "Video & filters", self.video_menu))
-        row.append(btn("view-list-symbolic", "Playlist (F6)", "win.show-playlist"))
+        self.play_btn = btn("media-playback-start-symbolic", "Play / pause (Space)", "win.toggle")
+        self.play_btn.add_css_class("play")
+        self.transport = Gtk.Box(spacing=4, css_classes=["transport"])
+        for w in (btn("astra-back10-symbolic", "Back 10 s", "win.back10"),
+                  btn("media-skip-backward-symbolic", "Previous (Page Up)", "win.previous"),
+                  self.play_btn,
+                  btn("media-skip-forward-symbolic", "Next (Page Down)", "win.next"),
+                  btn("astra-fwd10-symbolic", "Forward 10 s", "win.fwd10")):
+            self.transport.append(w)
+
+        self.repeat_btn = btn("media-playlist-repeat-symbolic", "Repeat (Ctrl+L)", "win.repeat-cycle")
+        self.record_btn = btn("media-record-symbolic", "Record a portion (Ctrl+R)", "win.record")
+        self.subs_btn = menu_btn("media-view-subtitles-symbolic", "Subtitles", self.subtitle_menu)
+        # Everything that moves to the header in fullscreen.
+        self.extras = Gtk.Box(spacing=2)
+        for w in (btn("document-open-symbolic", "Open files (Ctrl+O)", "win.open"),
+                  btn("folder-videos-symbolic", "Play a folder (Ctrl+F)", "win.open-folder"),
+                  self.repeat_btn, self.record_btn, self.subs_btn,
+                  menu_btn("audio-x-generic-symbolic", "Audio", self.audio_menu),
+                  menu_btn("applications-graphics-symbolic", "Video & filters", self.video_menu),
+                  btn("view-list-symbolic", "Playlist (F6)", "win.show-playlist"),
+                  btn("astra-pip-symbolic", "Picture in picture (Ctrl+P)", "win.pip")):
+            self.extras.append(w)
+
+        self.info_label = Gtk.Label(css_classes=["badge-info"], ellipsize=3, max_width_chars=28)
+        self.start_box = Gtk.Box(spacing=2)
+        self.start_box.append(btn("media-playback-stop-symbolic", "Stop (F4)", "win.stop"))
+        self.start_box.append(self.extras)
+        self.start_box.append(self.info_label)
+
         self.mute_btn = btn("audio-volume-high-symbolic", "Mute (M)", "win.mute")
-        row.append(self.mute_btn)
         self.volume = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 200, 1)
         self.volume.set_draw_value(False)
         self.volume.set_size_request(110, -1)
@@ -320,20 +343,40 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.volume.add_mark(100, Gtk.PositionType.BOTTOM, None)
         self.volume.set_value(self.engine.volume * 100)
         self.volume.connect("value-changed", self._on_volume_scale)
-        row.append(self.volume)
         self.vol_label = Gtk.Label(css_classes=["time", "numeric"], width_chars=4)
-        row.append(self.vol_label)
-        row.append(btn("view-dual-symbolic", "Picture in picture (Ctrl+P)", "win.pip"))
-        row.append(btn("view-fullscreen-symbolic", "Fullscreen (Enter)", "win.fullscreen"))
+        self.fs_btn = btn("view-fullscreen-symbolic", "Fullscreen (Enter)", "win.fullscreen")
+        end_box = Gtk.Box(spacing=2)
+        for w in (self.mute_btn, self.volume, self.vol_label, self.fs_btn):
+            end_box.append(w)
 
+        row = Gtk.CenterBox(start_widget=self.start_box, center_widget=self.transport, end_widget=end_box)
         controls = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, css_classes=["controls"])
         controls.append(seek_row)
         controls.append(row)
+        self.controls = controls
+        self.controls_clamp = Adw.Clamp(child=controls, maximum_size=100000, tightening_threshold=100000)
+
+        self.header = header
+        self.header_extras = Gtk.Box(spacing=2, css_classes=["header-extras"])
+        header.pack_end(self.header_extras)
+
+        self.clock = Gtk.Label(css_classes=["clock", "numeric"], halign=Gtk.Align.END,
+                               valign=Gtk.Align.START, margin_end=22, margin_top=64,
+                               visible=False, can_target=False)
+        self.overlay.add_overlay(self.clock)
+        self.overlay.set_measure_overlay(self.clock, False)
+        self.sub2_label = Gtk.Label(css_classes=["sub2"], wrap=True, justify=Gtk.Justification.CENTER,
+                                    halign=Gtk.Align.CENTER, valign=Gtk.Align.START, margin_start=60,
+                                    margin_end=60, visible=False, can_target=False, max_width_chars=60)
+        self.overlay.add_overlay(self.sub2_label)
+        self.overlay.set_measure_overlay(self.sub2_label, False)
+        GLib.timeout_add_seconds(1, self._tick_clock)
+        GLib.timeout_add_seconds(8, self._maybe_check_updates)
 
         self.toasts = Adw.ToastOverlay(child=main)
         self.view = Adw.ToolbarView(content=self.toasts)
         self.view.add_top_bar(header)
-        self.view.add_bottom_bar(controls)
+        self.view.add_bottom_bar(self.controls_clamp)
         self.view.set_bottom_bar_style(Adw.ToolbarStyle.RAISED_BORDER)
         self.set_content(self.view)
         self._update_volume_ui()
@@ -387,6 +430,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec.append_submenu("Chapters", self.chapter_menu)
         self.playback_menu.append_section(None, sec)
         sec = Gio.Menu()
+        sec.append("Save this video / stream…", "win.save-video")
         sec.append("Start / stop recording", "win.record")
         sec.append("Save A-B segment…", "win.export-ab")
         sec.append("Cancel saving", "win.export-cancel")
@@ -409,9 +453,44 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.sub_tracks = Gio.Menu()
         self.subtitle_menu = Gio.Menu()
         self.subtitle_menu.append_section("Subtitle track", self.sub_tracks)
+        self.folder_subs = Gio.Menu()
+        self.subtitle_menu.append_section("Subtitle files in this folder", self.folder_subs)
         sec = Gio.Menu()
         sec.append("Load subtitle file…", "win.load-subtitle")
         sec.append("Show subtitles", "win.subs-visible")
+        self.sub2_files = Gio.Menu()
+        sub2 = Gio.Menu()
+        sub2.append_section(None, self.sub2_files)
+        s2 = Gio.Menu()
+        s2.append("Load second subtitle…", "win.sub2-load")
+        s2.append("Turn off second subtitle", "win.sub2-off")
+        sub2.append_section(None, s2)
+        s2 = Gio.Menu()
+        s2.append_item(item("Show at the top", "win.sub2-pos", GLib.Variant.new_string("top")))
+        s2.append_item(item("Show above the first", "win.sub2-pos", GLib.Variant.new_string("bottom")))
+        s2.append("Delay +0.5 s", "win.sub2-later")
+        s2.append("Delay −0.5 s", "win.sub2-earlier")
+        sub2.append_section(None, s2)
+        sec.append_submenu("Second subtitle (two at once)", sub2)
+        style = Gio.Menu()
+        s3 = Gio.Menu()
+        s3.append_item(item("Modern (box)", "win.sub-style", GLib.Variant.new_string("modern")))
+        s3.append_item(item("Classic (outline)", "win.sub-style", GLib.Variant.new_string("classic")))
+        style.append_section(None, s3)
+        s3 = Gio.Menu()
+        for label, key in (("White", "white"), ("Yellow", "yellow"), ("Cyan", "cyan")):
+            s3.append_item(item(label, "win.sub-color", GLib.Variant.new_string(key)))
+        style.append_section(None, s3)
+        s3 = Gio.Menu()
+        for label, size in (("Small", 18), ("Medium", 24), ("Large", 32), ("Huge", 42)):
+            s3.append_item(item(label, "win.sub-size", GLib.Variant.new_int32(size)))
+        style.append_section(None, s3)
+        s3 = Gio.Menu()
+        s3.append("Move up (Alt+Up)", "win.sub-up")
+        s3.append("Move down (Alt+Down)", "win.sub-down")
+        s3.append("Reset position", "win.sub-pos-reset")
+        style.append_section(None, s3)
+        sec.append_submenu("Style and position", style)
         self.subtitle_menu.append_section(None, sec)
         sec = Gio.Menu()
         sec.append("Generate subtitles (Whisper)…", "win.whisper-generate")
@@ -458,6 +537,10 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec.append("Saved playlists", "win.library")
         sec.append("Fullscreen", "win.fullscreen")
         sec.append("Picture in picture", "win.pip")
+        clock = Gio.Menu()
+        for key, label in (("fullscreen", "In fullscreen"), ("always", "Always"), ("off", "Off")):
+            clock.append_item(item(label, "win.clock", GLib.Variant.new_string(key)))
+        sec.append_submenu("Clock", clock)
         sec.append("Media info", "win.media-info")
         self.main_menu.append_section(None, sec)
         sec = Gio.Menu()
@@ -565,6 +648,23 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("show-playlist", self._act_bool("show-playlist", self._set_playlist_visible),
             state=GLib.Variant.new_boolean(self.settings["show_playlist"]))
         add("fullscreen", simple(self.toggle_fullscreen))
+        add("back10", simple(lambda: self.seek_by(-10)))
+        add("save-video", simple(self.save_video))
+        add("sub-file", lambda _a, p: self.attach_subtitle(p.get_string()), "s")
+        add("sub2-file", lambda _a, p: self.set_second_subtitle(p.get_string()), "s")
+        add("sub2-load", simple(lambda: self.load_subtitle_dialog(second=True)))
+        add("sub2-off", simple(lambda: self.set_second_subtitle(None)))
+        add("sub2-pos", self._act_sub2_pos, "s", GLib.Variant.new_string(self.settings["sub2_pos"]))
+        add("sub2-later", simple(lambda: self._shift_sub2(0.5)))
+        add("sub2-earlier", simple(lambda: self._shift_sub2(-0.5)))
+        add("sub-style", self._act_sub_look, "s", GLib.Variant.new_string(self.settings["sub_style"]))
+        add("sub-color", self._act_sub_look, "s", GLib.Variant.new_string(self.settings["sub_color"]))
+        add("sub-size", self._act_sub_size, "i", GLib.Variant.new_int32(self._sub_font_size()))
+        add("sub-up", simple(lambda: self.move_subtitle(-0.03)))
+        add("sub-down", simple(lambda: self.move_subtitle(0.03)))
+        add("sub-pos-reset", simple(lambda: self.move_subtitle(None)))
+        add("fwd10", simple(lambda: self.seek_by(10)))
+        add("clock", self._act_clock, "s", GLib.Variant.new_string(self.settings["show_clock"]))
         add("media-info", simple(self.show_media_info))
         add("preferences", simple(lambda: dialogs.PreferencesDialog(self).present()))
         add("shortcuts", simple(lambda: dialogs.show_shortcuts(self)))
@@ -588,6 +688,11 @@ class PlayerWindow(Adw.ApplicationWindow):
             action.set_state(value)
             setter(value.get_boolean())
         return change
+
+    def _act_clock(self, action, param):
+        action.set_state(param)
+        self.settings["show_clock"] = param.get_string()
+        self._tick_clock()
 
     def _act_speed(self, action, param):
         self.set_speed(param.get_double())
@@ -673,7 +778,7 @@ class PlayerWindow(Adw.ApplicationWindow):
                               ("<Ctrl>w", "win.stop"), ("F4", "win.stop"),
                               ("<Ctrl>l", "win.repeat-cycle"), ("<Ctrl>p", "win.pip"),
                               ("<Ctrl>r", "win.record"), ("<Ctrl><Shift>r", "win.export-ab"),
-                              ("<Ctrl>b", "win.library")):
+                              ("<Ctrl>b", "win.library"), ("<Ctrl>s", "win.save-video")):
             self.app.set_accels_for_action(action, [accel])
 
     def _on_key(self, ctrl, keyval, keycode, state):
@@ -691,7 +796,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         e = self.engine
 
         if alt_on and not ctrl_on:
-            table = {"h": self._toggle_subs, "l": lambda: self._cycle("sub"), "a": lambda: self._cycle("audio")}
+            table = {"h": self._toggle_subs, "l": lambda: self._cycle("sub"), "a": lambda: self._cycle("audio"),
+                     "up": lambda: self.move_subtitle(-0.03), "down": lambda: self.move_subtitle(0.03)}
         elif ctrl_on and not alt_on:
             table = {
                 "left": lambda: self.seek_by(-s["seek_long"]), "right": lambda: self.seek_by(s["seek_long"]),
@@ -772,6 +878,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.view.set_reveal_top_bars(True)
         self.view.set_reveal_bottom_bars(True)
         self.set_cursor(None)
+        self._apply_sub_pos()
         if self._hide_timeout:
             GLib.source_remove(self._hide_timeout)
         self._hide_timeout = GLib.timeout_add(2500, self._autohide)
@@ -782,6 +889,7 @@ class PlayerWindow(Adw.ApplicationWindow):
             self.view.set_reveal_top_bars(False)
             self.view.set_reveal_bottom_bars(False)
             self.set_cursor(Gdk.Cursor.new_from_name("none", None))
+            self._apply_sub_pos()
         return False
 
     def _on_drop(self, target, value, x, y):
@@ -988,12 +1096,13 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.engine.reload(suburi)
         self.show_osd(f"Subtitle: {display_name(suburi)}")
 
-    def load_subtitle_dialog(self):
+    def load_subtitle_dialog(self, second=False):
         if not self.engine.uri:
             self.toast("Open a video first")
             return
         filters, default = subtitle_filter()
-        fd = Gtk.FileDialog(title="Load subtitle", filters=filters, default_filter=default)
+        fd = Gtk.FileDialog(title="Load second subtitle" if second else "Load subtitle",
+                            filters=filters, default_filter=default)
         path = uri_to_path(self.engine.uri)
         if path:
             fd.set_initial_folder(Gio.File.new_for_path(str(path.parent)))
@@ -1003,7 +1112,10 @@ class PlayerWindow(Adw.ApplicationWindow):
                 f = d.open_finish(res)
             except GLib.Error:
                 return
-            self.attach_subtitle(f.get_uri())
+            if second:
+                self.set_second_subtitle(f.get_uri())
+            else:
+                self.attach_subtitle(f.get_uri())
 
         fd.open(self, None, done)
 
@@ -1194,6 +1306,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.dur_label.set_label(fmt_time(dur))
         self._show_media_page()
         self._refresh_tracks()
+        self._refresh_folder_subs()
+        self._apply_sub_pos()
         if self._resumed_at and self._resumed_at > 1:
             self.show_osd(f"Resumed at {fmt_time(self._resumed_at)}  (Home to restart)")
         self._resumed_at = 0
@@ -1243,9 +1357,22 @@ class PlayerWindow(Adw.ApplicationWindow):
         else:
             self.play_index(idx)
 
+    UNSUPPORTED_HINTS = ("could not determine type", "missing decoder", "missing a plug-in",
+                         "no decoder", "not-negotiated", "unhandled", "could not demultiplex",
+                         "stream doesn't contain enough data", "no suitable plugins",
+                         "invalid data", "not a valid", "unsupported")
+
     def _on_error(self, engine, message):
-        self.toast(message)
-        self.show_osd(message, 4000)
+        entry = self.playlist.current
+        name = entry.title if entry else ""
+        if any(h in (message or "").lower() for h in self.UNSUPPORTED_HINTS) or \
+                (entry and uri_to_path(entry.uri) and ext_of(entry.uri) not in MEDIA_EXT | PLAYLIST_EXT):
+            self.show_osd(f"Unsupported file{': ' + name if name else ''}", 4000)
+            self.toast(f"Unsupported file: {name}" if name else "Unsupported file")
+            self.stack.set_visible_child_name("idle")
+        else:
+            self.toast(message)
+            self.show_osd(message, 4000)
         if len(self.playlist) > 1 and self.playlist.index < len(self.playlist) - 1:
             GLib.timeout_add(1500, lambda: self.step_playlist(1) and False)
 
@@ -1283,21 +1410,6 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.pos_label.set_label(fmt_time(value))
         self.engine.seek(value, accurate=False)
         return False
-
-    def _on_seek_tooltip(self, widget, x, y, keyboard, tooltip):
-        dur = self.engine.duration()
-        if not dur:
-            return False
-        width = widget.get_width()
-        frac = min(max((x - 8) / max(width - 16, 1), 0), 1)
-        t = frac * dur
-        label = fmt_time(t)
-        for start, title in reversed(self.engine.chapters):
-            if start <= t:
-                label += f"  ·  {title}"
-                break
-        tooltip.set_text(label)
-        return True
 
     # ============================================================ operations
 
@@ -1732,22 +1844,31 @@ class PlayerWindow(Adw.ApplicationWindow):
 
     def _run_export(self, entry, start, end, precise, web, out):
         cmd = export.build_command(entry.uri, start, end, out, precise, web_page=web)
+        self._start_export(cmd, end - start, out, "Saving clip")
+
+    def _start_export(self, cmd, duration, out, label):
+        """Run an ffmpeg / yt-dlp save with progress in the info label.
+
+        With no known duration (a live stream) it records until Playback ›
+        Cancel saving, and the part recorded so far is kept.
+        """
+        live = not duration
         self.lookup_action("export-cancel").set_enabled(True)
-        self.show_osd(f"Saving {out.name}…", 3000)
+        self.show_osd(f"{label}: {out.name}" + ("  (Playback › Cancel saving to stop)" if live else "…"), 4000)
 
         def progress(frac):
-            self.info_label.set_label(f"Saving clip {round(frac * 100)}%")
+            self.info_label.set_label(f"● {label}" if live else f"{label} {round(frac * 100)}%")
             return False
 
         def done(error):
             self._export = None
             self.lookup_action("export-cancel").set_enabled(False)
             self._update_info()
-            if error == "cancelled":
+            if error == "cancelled" and not (live and out.exists() and out.stat().st_size > 0):
                 out.unlink(missing_ok=True)
                 self.toast("Saving cancelled")
-            elif error:
-                self.toast(f"Could not save clip: {error}")
+            elif error and error != "cancelled":
+                self.toast(f"Could not save: {error}")
             else:
                 toast = Adw.Toast(title=GLib.markup_escape_text(f"Saved {out.name}"), timeout=6,
                                   button_label="Show")
@@ -1756,7 +1877,46 @@ class PlayerWindow(Adw.ApplicationWindow):
                 self.toasts.add_toast(toast)
             return False
 
-        self._export = export.Export(cmd, end - start, progress, done)
+        self._export = export.Export(cmd, duration or 1, progress, done)
+        if live:
+            progress(0)
+
+    def save_video(self):
+        """Download the whole video, or record a live stream until cancelled."""
+        entry = self.playlist.current
+        if entry is None or not self.engine.uri:
+            self.toast("Nothing is playing")
+            return
+        if uri_to_path(entry.uri) is not None:
+            self.toast("This video is already a file on this computer")
+            return
+        if self._export is not None:
+            self.toast("A save is already running (Playback › Cancel saving)")
+            return
+        web = _needs_ytdlp(entry.uri)
+        if not web and not export.available():
+            self.toast("Saving streams needs ffmpeg: sudo apt install ffmpeg")
+            return
+        stem = re.sub(r'[\\/:*?"<>|]+', "_", entry.title).strip() or "video"
+        name = f"{stem}.mkv"
+        fd = Gtk.FileDialog(title="Save video as", initial_name=name)
+        videos = Path(GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_VIDEOS) or Path.home())
+        if videos.is_dir():
+            fd.set_initial_folder(Gio.File.new_for_path(str(videos)))
+
+        def done(d, res):
+            try:
+                f = d.save_finish(res)
+            except GLib.Error:
+                return
+            out = Path(f.get_path())
+            source = entry.uri if web else self.engine.uri
+            cmd = export.build_download(source, out, web_page=web)
+            live = self.engine.duration() is None
+            self._start_export(cmd, self.engine.duration() or 0, out,
+                               "Recording stream" if live and not web else "Saving video")
+
+        fd.save(self, None, done)
 
     def cancel_export(self):
         if self._export is not None:
@@ -1924,11 +2084,262 @@ class PlayerWindow(Adw.ApplicationWindow):
         fs = self.is_fullscreen()
         self.view.set_extend_content_to_top_edge(fs)
         self.view.set_extend_content_to_bottom_edge(fs)
+        self._arrange_controls(fs)
+        GLib.timeout_add(300, lambda: self._apply_sub_pos() and False)
         self.view.set_reveal_top_bars(True)
         self.view.set_reveal_bottom_bars(True)
         self.set_cursor(None)
         if fs:
             self._hide_timeout = GLib.timeout_add(2500, self._autohide)
+
+    def _arrange_controls(self, fs):
+        """Move the option buttons between the bottom bar and the header."""
+        parent = self.extras.get_parent()
+        target = self.header_extras if fs else self.start_box
+        if parent is not target:
+            if parent is not None:
+                parent.remove(self.extras)
+            if fs:
+                target.append(self.extras)
+            else:
+                target.insert_child_after(self.extras, target.get_first_child())
+        for w, menu_dir in ((self.extras, Gtk.ArrowType.DOWN if fs else Gtk.ArrowType.UP),):
+            child = w.get_first_child()
+            while child is not None:
+                if isinstance(child, Gtk.MenuButton):
+                    child.set_direction(menu_dir)
+                child = child.get_next_sibling()
+        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs else Adw.ToolbarStyle.RAISED_BORDER)
+        self.controls_clamp.set_maximum_size(860 if fs else 100000)
+        self.controls_clamp.set_tightening_threshold(860 if fs else 100000)
+        for widget in (self.controls, self.header):
+            if fs:
+                widget.add_css_class("fs")
+            else:
+                widget.remove_css_class("fs")
+        self.clock.set_margin_top(64 if fs else 14)
+        self.fs_btn.set_icon_name("view-restore-symbolic" if fs else "view-fullscreen-symbolic")
+        self.fs_btn.set_tooltip_text("Leave fullscreen (Esc)" if fs else "Fullscreen (Enter)")
+        self._tick_clock()
+
+    # -------------------------------------------------------- subtitles
+
+    def _sub_font_size(self):
+        from gi.repository import Pango
+        desc = Pango.FontDescription.from_string(self.settings["subtitle_font"])
+        return max(8, round(desc.get_size() / Pango.SCALE)) if desc.get_size() else 24
+
+    def _act_sub_size(self, action, param):
+        from gi.repository import Pango
+        action.set_state(param)
+        desc = Pango.FontDescription.from_string(self.settings["subtitle_font"])
+        desc.set_size(param.get_int32() * Pango.SCALE)
+        self.settings["subtitle_font"] = desc.to_string()
+        self.engine.set_subtitle_font(desc.to_string())
+        self.sub2_label.set_attributes(None)
+        self._style_sub2()
+        self.show_osd(f"Subtitle size {param.get_int32()}")
+
+    def _act_sub_look(self, action, param):
+        action.set_state(param)
+        key = "sub_style" if action.get_name() == "sub-style" else "sub_color"
+        self.settings[key] = param.get_string()
+        self.engine.set_subtitle_style(style=self.settings["sub_style"], color=self.settings["sub_color"])
+        self._style_sub2()
+        self.show_osd(f"Subtitles: {self.settings['sub_style']}, {self.settings['sub_color']}")
+
+    def move_subtitle(self, delta):
+        pos = 0.93 if delta is None else self.settings["sub_pos"] + delta
+        self.settings["sub_pos"] = round(min(max(pos, 0.1), 1.0), 3)
+        self._apply_sub_pos()
+        self.show_osd("Subtitle position reset" if delta is None else
+                      f"Subtitle position {round((1 - self.settings['sub_pos']) * 100)}% from bottom")
+
+    def _apply_sub_pos(self):
+        """Lift the subtitles above the floating controls while they are shown in fullscreen."""
+        lift = 0.0
+        if self.is_fullscreen() and self.view.get_reveal_bottom_bars():
+            oh = self.overlay.get_height() or 1
+            lift = (self.controls_clamp.get_height() + 30) / oh
+        self._sub_lift = lift
+        self.engine.set_subtitle_style(ypos=max(0.05, self.settings["sub_pos"] - lift))
+        self.sub2_label.set_margin_bottom(int(lift * (self.overlay.get_height() or 0)) + 90)
+
+    def _refresh_folder_subs(self):
+        entry = self.playlist.current
+        self.folder_subs.remove_all()
+        self.sub2_files.remove_all()
+        found = find_subtitles(entry.uri) if entry else []
+        for _score, sub in found[:30]:
+            name = display_name(sub)
+            it = Gio.MenuItem.new(name, None)
+            it.set_action_and_target_value("win.sub-file", GLib.Variant.new_string(sub))
+            self.folder_subs.append_item(it)
+            it = Gio.MenuItem.new(name, None)
+            it.set_action_and_target_value("win.sub2-file", GLib.Variant.new_string(sub))
+            self.sub2_files.append_item(it)
+        if not found:
+            self.folder_subs.append("(none found)", "win.noop")
+
+    def set_second_subtitle(self, uri):
+        if not uri:
+            self._sub2 = None
+            self.sub2_label.set_visible(False)
+            self.show_osd("Second subtitle off")
+            return
+        path = uri_to_path(uri)
+        try:
+            cues = subparse.load(path) if path else None
+        except OSError as exc:
+            self.toast(f"Could not read subtitle: {exc}")
+            return
+        if not cues:
+            self.toast("No text cues found in that subtitle (picture subtitles can't be shown twice)")
+            return
+        self._sub2 = cues
+        self._sub2_delay = 0.0
+        self._style_sub2()
+        self.show_osd(f"Second subtitle: {display_name(uri)}")
+        if not getattr(self, "_sub2_timer", 0):
+            self._sub2_timer = GLib.timeout_add(100, self._tick_sub2)
+
+    def _tick_sub2(self):
+        if self._sub2 is None:
+            self._sub2_timer = 0
+            self.sub2_label.set_visible(False)
+            return False
+        pos = self.engine.position()
+        text = self._sub2.at(pos - self._sub2_delay) if pos is not None else ""
+        if text != self.sub2_label.get_label():
+            self.sub2_label.set_label(text)
+        self.sub2_label.set_visible(bool(text) and self.stack.get_visible_child_name() == "video")
+        return True
+
+    def _style_sub2(self):
+        lbl = self.sub2_label
+        for cls in ("modern", "classic", "white", "yellow", "cyan"):
+            lbl.remove_css_class(cls)
+        lbl.add_css_class(self.settings["sub_style"])
+        lbl.add_css_class(self.settings["sub_color"])
+        top = self.settings["sub2_pos"] == "top"
+        lbl.set_valign(Gtk.Align.START if top else Gtk.Align.END)
+        lbl.set_margin_top(70 if top else 0)
+        from gi.repository import Pango
+        attrs = Pango.AttrList()
+        attrs.insert(Pango.attr_size_new(int(self._sub_font_size() * 0.9 * Pango.SCALE)))
+        lbl.set_attributes(attrs)
+        self._apply_sub_pos()
+
+    def _act_sub2_pos(self, action, param):
+        action.set_state(param)
+        self.settings["sub2_pos"] = param.get_string()
+        self._style_sub2()
+
+    def _shift_sub2(self, delta):
+        self._sub2_delay += delta
+        self.show_osd(f"Second subtitle delay {self._sub2_delay:+.1f} s")
+
+    # ---------------------------------------------------------- updates
+
+    def _maybe_check_updates(self):
+        from . import __version__, updater
+        if self.settings["check_updates"] and updater.due(self.settings["update_last_check"]):
+            self.settings["update_last_check"] = time.time()
+            updater.check_async(__version__, self._offer_update)
+        return False
+
+    def _offer_update(self, version, deb_url, page_url):
+        toast = Adw.Toast(title=GLib.markup_escape_text(f"Astra Player {version.lstrip('v')} is available"),
+                          timeout=0, button_label="Update")
+
+        def install(_t):
+            from . import updater
+            self.show_osd("Downloading the update…", 6000)
+
+            def done(err):
+                if err:
+                    self.toast(f"Update failed: {err}")
+                else:
+                    self.toast(f"Updated to {version.lstrip('v')}. Restart Astra Player to use it.")
+
+            updater.install_async(deb_url, done)
+
+        toast.connect("button-clicked", install)
+        self.toasts.add_toast(toast)
+
+    # ------------------------------------------------------------ clock
+
+    def _tick_clock(self):
+        mode = self.settings["show_clock"]
+        show = mode == "always" or (mode == "fullscreen" and self.is_fullscreen())
+        if show:
+            self.clock.set_label(time.strftime("%H:%M"))
+        self.clock.set_visible(show)
+        return True
+
+    # ------------------------------------------------------- seek preview
+
+    def _build_seek_preview(self):
+        from .thumbnailer import Thumbnailer
+        self.thumb_pic = Gtk.Picture(width_request=192, height_request=108,
+                                     content_fit=Gtk.ContentFit.CONTAIN, css_classes=["thumb"])
+        self.thumb_label = Gtk.Label(css_classes=["thumb-time", "numeric"])
+        # Drawn inside the video overlay (not a popover) so it also works when the
+        # controls float over the video in fullscreen.
+        self.thumb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4,
+                                 css_classes=["seek-preview"], halign=Gtk.Align.START,
+                                 valign=Gtk.Align.END, visible=False, can_target=False)
+        self.thumb_box.append(self.thumb_pic)
+        self.thumb_box.append(self.thumb_label)
+        self.overlay.add_overlay(self.thumb_box)
+        self.overlay.set_measure_overlay(self.thumb_box, False)
+        self._thumb_at = None
+        self.thumbs = Thumbnailer(self._on_thumb)
+
+    def _preview_uri(self):
+        uri = self.engine.uri
+        if not uri or not self.engine.has_video():
+            return None
+        return uri
+
+    def _on_seek_hover(self, _ctrl, x, _y):
+        dur = self.engine.duration()
+        if not dur or not self.engine.uri:
+            return
+        width = self.seek.get_width()
+        frac = min(max((x - 8) / max(width - 16, 1), 0), 1)
+        t = frac * dur
+        label = fmt_time(t)
+        for start, title in reversed(self.engine.chapters):
+            if start <= t:
+                label += f"  ·  {title}"
+                break
+        self.thumb_label.set_label(label)
+        uri = self._preview_uri()
+        self.thumb_pic.set_visible(uri is not None)
+        if uri is not None:
+            self._thumb_at = (uri, self.thumbs.bucket(t))
+            self.thumbs.request(uri, t)
+        ok, pt = self.seek.compute_point(self.overlay, Graphene.Point().init(x, 0))
+        if not ok:
+            return
+        box_w = 200
+        ow, oh = self.overlay.get_width(), self.overlay.get_height()
+        self.thumb_box.set_margin_start(int(min(max(pt.x - box_w / 2, 6), max(ow - box_w - 6, 6))))
+        # In a window the seek bar sits just below the video; in fullscreen it floats over it.
+        self.thumb_box.set_margin_bottom(int(oh - pt.y + 12) if 0 < pt.y < oh else 10)
+        self.thumb_box.set_visible(True)
+
+    def _hide_seek_preview(self):
+        self._thumb_at = None
+        self.thumb_box.set_visible(False)
+
+    def _on_thumb(self, uri, seconds, data, w, h):
+        if self._thumb_at != (uri, seconds):
+            return False
+        tex = Gdk.MemoryTexture.new(w, h, Gdk.MemoryFormat.R8G8B8A8, GLib.Bytes.new(data), w * 4)
+        self.thumb_pic.set_paintable(tex)
+        return False
 
     # --------------------------------------------------------------- OSD
 
@@ -1988,5 +2399,6 @@ class PlayerWindow(Adw.ApplicationWindow):
             self._whisper_thread.join(3)
         self._save_resume()
         self.settings.save()
+        self.thumbs.shutdown()
         self.engine.shutdown()
         return False
