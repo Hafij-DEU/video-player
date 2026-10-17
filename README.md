@@ -63,7 +63,7 @@ from PotPlayer.
 
 ```bash
 ./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.5.1_all.deb
+sudo apt install ./dist/astra-player_1.6.0_all.deb
 ```
 
 The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
@@ -74,18 +74,38 @@ recommended extras.
 ### YouTube says “Sign in to confirm you’re not a bot”
 
 YouTube sometimes rate-limits a connection (HTTP 429) and then refuses
-anonymous playback. In Preferences › YouTube, choose a browser you are signed
-in to YouTube with (Brave, Chrome, Chromium, Edge, Firefox, …) or a
-`cookies.txt` export. yt-dlp then reads that login on this computer. For
-Chrome-based browsers yt-dlp needs the `secretstorage` Python module to open
-the GNOME keyring:
+anonymous playback. When that happens, Astra Player asks once whether it may
+use your YouTube login from a browser on this computer (Brave, Chrome,
+Chromium, Edge, Firefox, Opera or Vivaldi). Pick one and press **Allow**: the
+video starts again where it was. If that browser isn't signed in, Astra Player
+tries your other browsers by itself, and remembers the one that works. yt-dlp
+reads the cookies on this computer and sends them only to YouTube. Nothing is
+read before you allow it, and you can change or turn off the choice, or use a
+`cookies.txt` export, in Preferences › YouTube.
+
+If no browser works, sign in to YouTube in one of them and play the video
+again, or wait a few hours: the limit is lifted by itself.
+
+For Chrome-based browsers yt-dlp needs the `secretstorage` Python module to
+open the GNOME keyring. Astra Player checks for it and, if its own yt-dlp
+lacks it, uses a system yt-dlp that has it:
 
 ```bash
-sudo apt install python3-secretstorage      # for the apt yt-dlp
+sudo apt install python3-secretstorage      # for the apt yt-dlp and Astra Player's own copy
 pipx inject yt-dlp secretstorage            # for a pipx yt-dlp
 ```
 
-Waiting a few hours also lifts the limit.
+### Keeping yt-dlp current
+
+YouTube changes often, and an old yt-dlp is a common reason for playback to
+fail. Turn on Preferences › YouTube › *Keep yt-dlp up to date* (or tick the box
+in the sign-in dialog) and Astra Player downloads the official yt-dlp
+(about 3 MB) from [its GitHub releases](https://github.com/yt-dlp/yt-dlp/releases),
+checks it against the release's `SHA2-256SUMS`, and keeps it in
+`~/.local/share/astra-player/bin`. It then looks for a new release once a week
+and uses that copy in place of the system one. Astra Player always asks, with
+the size, before the first download. On a computer without yt-dlp, opening a
+YouTube link offers the same download.
 
 ### Speech to subtitles
 
@@ -153,8 +173,12 @@ DISPLAY=:77 GDK_BACKEND=x11 dbus-run-session python3 tests/gui_selftest.py
 `dbus-run-session` keeps the test from handing off to a Astra Player that is
 already open on your desktop.
 
-The unit tests need no display and no network. The YouTube search test
-parses canned `yt-dlp` output from `tests/fixtures/`:
+The unit tests need no display and no network. The YouTube test parses canned
+`yt-dlp` output from `tests/fixtures/`, and checks the browser fallback order,
+which yt-dlp is chosen, the weekly update schedule and the checksum check
+against a local stand-in for GitHub. The GUI test drives the sign-in dialog
+with a stand-in yt-dlp. No test reads browser cookies or writes to
+`~/.local/share`:
 
 ```bash
 python3 -m unittest tests/test_whisper.py tests/test_youtube.py

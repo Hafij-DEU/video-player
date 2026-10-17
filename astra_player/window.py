@@ -2,7 +2,6 @@
 
 import hashlib
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -34,7 +33,7 @@ STREAM_EXT = MEDIA_EXT | PLAYLIST_EXT | {"mpd", "ism"}
 
 
 def _needs_ytdlp(uri):
-    if not uri.startswith(("http://", "https://")) or not shutil.which("yt-dlp"):
+    if not uri.startswith(("http://", "https://")) or not youtube.have_ytdlp():
         return False
     tail = uri.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
     return ext_of(tail) not in STREAM_EXT
@@ -58,24 +57,26 @@ def _resolve_ytdlp(uri):
 
     YouTube videos come as separate video and audio streams. Everything else
     (and YouTube live streams) prefers an HLS master playlist, then the best
-    single file. Raises RuntimeError when yt-dlp fails.
+    single file. Raises RuntimeError with the end of yt-dlp's error output when it fails.
     """
+    ytdlp = youtube.ytdlp_path() or "yt-dlp"
     if _is_youtube(uri):
         proc = subprocess.run(
-            ["yt-dlp", "--no-playlist", "--no-warnings", *youtube.auth_args(), "-f", YOUTUBE_FORMAT,
+            [ytdlp, "--no-playlist", "--no-warnings", *youtube.auth_args(), "-f", YOUTUBE_FORMAT,
              "-O", "title", "-O", "urls", uri],
             capture_output=True, text=True, timeout=60)
         lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
         if proc.returncode == 0 and len(lines) >= 3:
             return lines[0], lines[1], lines[2]
     proc = subprocess.run(
-        ["yt-dlp", "--no-playlist", "--no-warnings", *(youtube.auth_args() if _is_youtube(uri) else []),
+        [ytdlp, "--no-playlist", "--no-warnings", *(youtube.auth_args() if _is_youtube(uri) else []),
          "-f", "best*[protocol^=m3u8]/bv*[protocol^=m3u8]/best[vcodec!=none][acodec!=none]/best",
          "-O", "title", "-O", "%(manifest_url,url)s", uri],
         capture_output=True, text=True, timeout=60)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
     if proc.returncode != 0 or len(lines) < 2:
-        raise RuntimeError((proc.stderr.strip().splitlines() or ["yt-dlp failed"])[-1])
+        errors = [ln for ln in proc.stderr.strip().splitlines() if ln.strip()]
+        raise RuntimeError("\n".join(errors[-6:]) or "yt-dlp failed")
     return lines[0], _single_codec_master(lines[1]), None
 
 
@@ -149,6 +150,9 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.pip = None
         self.library = Library()
         youtube.cookie_source = self.settings["youtube_cookies"]
+        youtube.managed_enabled = self.settings["ytdlp_managed"]
+        self._yt_attempt = None  # browser fallback in progress: {"uri", "original", "queue"}
+        self._ytdlp_job = None
         self._rec_start = None
         self._export = None
         self._whisper_cancel = None
@@ -170,6 +174,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._refresh_recent()
         self._set_aspect("default")
         GLib.timeout_add(200, self._tick)
+        GLib.timeout_add_seconds(20, self._ytdlp_maintenance)
         self.connect("close-request", self._on_close)
         self.connect("notify::fullscreened", self._on_fullscreen_changed)
 
@@ -852,7 +857,7 @@ class PlayerWindow(Adw.ApplicationWindow):
 
     def search_youtube(self, query=""):
         if not youtube.have_ytdlp():
-            self.toast("Install yt-dlp to search and play YouTube (sudo apt install yt-dlp)")
+            self.ytdlp_missing(lambda: self.search_youtube(query))
             return
         self._search_dialog = SearchDialog(self, query).present()
 
@@ -880,7 +885,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self._refresh_playlist()
         self.play_index([e.uri for e in self.playlist.entries].index(start_uri))
 
-    def play_index(self, idx):
+    def play_index(self, idx, start=None):
         if idx is None or not 0 <= idx < len(self.playlist):
             return
         self._save_resume()
@@ -902,13 +907,20 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.engine.subtitle_delay = 0
         if entry.suburi is None and self.settings["auto_load_subtitles"]:
             entry.suburi = find_subtitle(entry.uri)
-        start = 0.0
-        if self.settings["resume_playback"]:
-            start = self.settings.get_resume(entry.uri) or 0.0
+        if start is None:
+            start = 0.0
+            if self.settings["resume_playback"]:
+                start = self.settings.get_resume(entry.uri) or 0.0
         self._resumed_at = start
+        if self._yt_attempt and self._yt_attempt["uri"] != entry.uri:
+            self._end_yt_attempt(restore=True)
 
         if _is_youtube(entry.uri) and not youtube.have_ytdlp():
-            self.toast("Install yt-dlp to play YouTube (sudo apt install yt-dlp)")
+            self._loading_index = idx
+            self.engine.stop()
+            self.stack.set_visible_child_name("idle")
+            self.ytdlp_missing(lambda: self.play_index(idx, start))
+            return
         if _needs_ytdlp(entry.uri):
             self.show_osd("Resolving link…", 30000)
             self._loading_index = idx
@@ -919,22 +931,28 @@ class PlayerWindow(Adw.ApplicationWindow):
                     err = None
                 except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
                     title, direct, audio, err = None, entry.uri, None, str(exc)
+                if err and _is_youtube(entry.uri):
+                    youtube.keyring_missing("chrome")  # warm the cache off the main thread
                 GLib.idle_add(finish, title, direct, audio, err)
 
             def finish(title, direct, audio, err):
                 if self._loading_index != idx:
                     return False
+                if err and _is_youtube(entry.uri) and (
+                        youtube.is_bot_block(err)
+                        or youtube.cookie_source and youtube.is_cookie_error(err)):
+                    self.engine.stop()
+                    self.stack.set_visible_child_name("idle")
+                    self.youtube_signin_failed(idx, start, err)
+                    return False
+                if not err and self._yt_attempt and self._yt_attempt["uri"] == entry.uri:
+                    self._end_yt_attempt(restore=False)
                 if title:
                     entry.title = title
                     self.title_widget.set_title(title)
                     self._refresh_playlist()
                 if err:
-                    if youtube.is_bot_block(err):
-                        self.youtube_blocked(err)
-                        self.engine.stop()
-                        self.stack.set_visible_child_name("idle")
-                        return False
-                    self.toast(f"yt-dlp: {err}")
+                    self.toast(f"yt-dlp: {err.splitlines()[-1]}")
                 if audio:
                     self.engine.load(direct, audio, start, external_audio=True)
                 else:
@@ -1386,18 +1404,172 @@ class PlayerWindow(Adw.ApplicationWindow):
 
     # ------------------------------------------------- YouTube sign-in
 
-    def youtube_blocked(self, err):
-        if youtube.cookie_source:
-            text = ("YouTube still asks to confirm you're not a bot. Open YouTube in the chosen "
-                    "browser, make sure you are signed in, then try again.")
+    def youtube_signin_failed(self, idx, start, err):
+        """YouTube wants a sign-in: ask once, then try each browser in turn and replay."""
+        uri = self.playlist.entries[idx].uri
+        source = youtube.cookie_source
+        browsers = youtube.detect_browsers()
+        if not source:
+            if not browsers:
+                self.youtube_blocked("none")
+                return
+            self.show_osd("YouTube: sign-in needed", 6000)
+            if self.get_visible_dialog() is None:
+                # Without secretstorage, offer browsers that don't need the keyring first.
+                order = youtube.fallback_order("", browsers, not youtube.keyring_missing("chrome"))
+                labels = dict((spec, label) for label, spec in browsers)
+                dialogs.youtube_consent(
+                    self, [(labels[spec], spec) for spec in order],
+                    offer_ytdlp=not self.settings["ytdlp_managed"],
+                    on_allow=lambda spec, get_ytdlp: self._youtube_allowed(idx, start, spec, get_ytdlp))
+            return
+        if source.startswith("file:"):
+            self.youtube_blocked("file")
+            return
+        attempt = self._yt_attempt
+        if attempt is None or attempt["uri"] != uri:
+            keyring_ok = not youtube.keyring_missing("chrome")
+            attempt = self._yt_attempt = {
+                "uri": uri, "original": source, "tried": [source],
+                "queue": youtube.fallback_order(source, browsers, keyring_ok)[1:]}
+        if attempt["queue"]:
+            spec = attempt["queue"].pop(0)
+            attempt["tried"].append(spec)
+            youtube.cookie_source = spec
+            self.show_osd(f"Trying {youtube.browser_label(spec, browsers)}\u2026", 30000)
+            self.play_index(idx, start)
+            return
+        tried = attempt["tried"]
+        self._end_yt_attempt(restore=True)
+        self.youtube_blocked("keyring" if any(youtube.needs_keyring(t) for t in tried)
+                             and youtube.keyring_missing("chrome") else "tried")
+
+    def _youtube_allowed(self, idx, start, spec, get_ytdlp):
+        self.settings["youtube_cookies"] = spec
+        youtube.cookie_source = spec
+        self.settings.save()
+        self._yt_attempt = None
+        if 0 <= idx < len(self.playlist):
+            uri = self.playlist.entries[idx].uri
+            keyring_ok = not youtube.keyring_missing("chrome")
+            self._yt_attempt = {"uri": uri, "original": spec, "tried": [spec],
+                                "queue": youtube.fallback_order(
+                                    spec, youtube.detect_browsers(), keyring_ok)[1:]}
+        replay = lambda *_a: self.play_index(idx, start) if 0 <= idx < len(self.playlist) else None
+        if get_ytdlp:
+            self.get_ytdlp(replay)
         else:
-            text = ("YouTube is limiting this connection and wants a signed-in session. "
-                    "Choose a browser you're signed in with in Preferences › YouTube, "
-                    "or wait a few hours.")
+            replay()
+
+    def _end_yt_attempt(self, restore):
+        """Finish a browser fallback: keep the browser that worked, or go back to the chosen one."""
+        attempt, self._yt_attempt = self._yt_attempt, None
+        if attempt is None:
+            return
+        if restore:
+            youtube.cookie_source = attempt["original"]
+        elif youtube.cookie_source != self.settings["youtube_cookies"]:
+            self.settings["youtube_cookies"] = youtube.cookie_source
+            self.settings.save()
+            self.show_osd(f"Signed in with {youtube.browser_label(youtube.cookie_source)}", 3000)
+
+    def youtube_blocked(self, why):
+        """Explain that YouTube still wants a sign-in and nothing more can be tried automatically."""
+        signin = ("Open YouTube in Firefox, Chrome, Brave, Edge, Chromium, Vivaldi or Opera, "
+                  "sign in, then play the video again. Or wait a few hours: the limit is lifted "
+                  "by itself.")
+        body = {
+            "none": "YouTube is limiting this connection and wants a signed-in session, "
+                    "but no supported browser was found on this computer. " + signin,
+            "file": "YouTube still asks to confirm you\u2019re not a bot with the chosen cookies.txt "
+                    "file. Export a fresh one while signed in, choose a browser in Preferences "
+                    "\u203a YouTube, or wait a few hours.",
+            "tried": "None of the browsers on this computer has a YouTube sign-in that YouTube "
+                     "accepts right now. " + signin,
+            "keyring": "None of the browsers on this computer has a YouTube sign-in that worked. "
+                       + youtube.SECRETSTORAGE_HINT + ". " + signin,
+        }[why]
         self.show_osd("YouTube: sign-in needed", 6000)
-        toast = Adw.Toast(title=GLib.markup_escape_text(text), timeout=12, button_label="Preferences")
-        toast.connect("button-clicked", lambda _t: dialogs.PreferencesDialog(self).present())
+        if self.get_visible_dialog() is not None:
+            return
+        dlg = Adw.AlertDialog(heading="YouTube still wants a sign-in", body=body)
+        dlg.add_response("prefs", "Preferences")
+        dlg.add_response("close", "Close")
+        dlg.set_default_response("close")
+        dlg.set_close_response("close")
+        dlg.connect("response", lambda _d, r: dialogs.PreferencesDialog(self).present()
+                    if r == "prefs" else None)
+        dlg.present(self)
+
+    # -------------------------------------------------- managed yt-dlp
+
+    def ytdlp_missing(self, then):
+        """No yt-dlp at all: offer Astra Player's own copy (asked once, then a toast)."""
+        if not self.settings["ytdlp_offered"]:
+            self.settings["ytdlp_offered"] = True
+            self.get_ytdlp(lambda ok: then() if ok else None,
+                           reason="Playing and searching YouTube needs yt-dlp, which is not "
+                                  "installed. ")
+            return
+        toast = Adw.Toast(title="YouTube needs yt-dlp", timeout=8, button_label="Get yt-dlp")
+        toast.connect("button-clicked", lambda _t: self.get_ytdlp(
+            lambda ok: then() if ok else None, reason="Playing and searching YouTube needs yt-dlp. "))
         self.toasts.add_toast(toast)
+
+    def get_ytdlp(self, on_done=None, reason=""):
+        """Download Astra Player's own yt-dlp; asks first unless the caller already asked."""
+        on_done = on_done or (lambda _ok: None)
+        if reason:
+            dialogs.confirm_ytdlp_download(self, reason, lambda: self._download_ytdlp(on_done),
+                                           lambda: on_done(False))
+        else:
+            self._download_ytdlp(on_done)
+
+    def _download_ytdlp(self, on_done, quiet=False):
+        if self._ytdlp_job is not None:
+            self._ytdlp_job.append(on_done)
+            return
+        self._ytdlp_job = [on_done]
+        if not quiet:
+            self.show_osd("Downloading yt-dlp\u2026", 30000)
+
+        def progress(frac):
+            if not quiet:
+                GLib.idle_add(lambda: self.show_osd(f"Downloading yt-dlp {frac:.0%}", 30000) and False)
+
+        def worker():
+            try:
+                tag, updated = youtube.update_managed(progress)
+                err = None
+            except (OSError, RuntimeError, ValueError) as exc:
+                tag, updated, err = None, False, str(exc)
+            GLib.idle_add(done, tag, updated, err)
+
+        def done(tag, updated, err):
+            callbacks, self._ytdlp_job = self._ytdlp_job, None
+            if err:
+                if not quiet:
+                    self.show_osd("yt-dlp download failed", 3000)
+                    self.toast(f"Could not get yt-dlp: {err}")
+            else:
+                self.settings["ytdlp_managed"] = True
+                self.settings["ytdlp_last_check"] = time.time()
+                self.settings.save()
+                youtube.managed_enabled = True
+                if not quiet or updated:
+                    self.show_osd(f"yt-dlp {tag} {'installed' if updated else 'is up to date'}", 3000)
+            for cb in callbacks:
+                cb(err is None)
+            return False
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _ytdlp_maintenance(self):
+        """Weekly update of the managed yt-dlp while "Keep yt-dlp up to date" is on."""
+        if self.settings["ytdlp_managed"] and youtube.update_due(self.settings["ytdlp_last_check"]):
+            self._download_ytdlp(lambda _ok: None, quiet=True)
+        GLib.timeout_add_seconds(6 * 3600, self._ytdlp_maintenance)
+        return False
 
     # -------------------------------------------------- saved playlists
 
@@ -1508,7 +1680,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         if entry is None:
             return
         web = _needs_ytdlp(entry.uri)
-        if web and not shutil.which("yt-dlp"):
+        if web and not youtube.have_ytdlp():
             self.toast("Saving web video needs yt-dlp")
             return
         if not export.available():

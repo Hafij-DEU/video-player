@@ -124,8 +124,8 @@ class SearchDialog:
         self.spinner.stop()
         self.results = results
         if err and youtube.is_bot_block(err):
-            err = ("YouTube is limiting this connection. Choose a signed-in browser in "
-                   "Preferences › YouTube, or wait a few hours.")
+            err = ("YouTube is limiting this connection. Play a video to sign in with a "
+                   "browser, choose one in Preferences › YouTube, or wait a few hours.")
             self.toast(err)
         elif err:
             self.toast(f"YouTube search failed: {err}")

@@ -55,8 +55,8 @@ def build_command(source, start, end, out_path, precise, web_page=False):
     dur = max(end - start, 0.05)
     out = str(out_path)
     if web_page:
-        from .youtube import auth_args
-        cmd = ["yt-dlp", "--no-playlist", "--newline", "--no-warnings", "--force-overwrites", *auth_args(),
+        from .youtube import auth_args, ytdlp_path
+        cmd = [ytdlp_path() or "yt-dlp", "--no-playlist", "--newline", "--no-warnings", "--force-overwrites", *auth_args(),
                "--download-sections", f"*{start:.3f}-{end:.3f}",
                "-f", "bv*+ba/b", "-o", out]
         if precise:

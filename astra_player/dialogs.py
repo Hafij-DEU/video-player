@@ -1,5 +1,7 @@
 """Secondary dialogs: equalizer, color adjust, media info, preferences, shortcuts, URL, Whisper."""
 
+import threading
+
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from . import whisper, youtube
@@ -172,6 +174,87 @@ def confirm_model_download(win, name, on_yes):
     dlg.set_default_response("download")
     dlg.set_close_response("cancel")
     dlg.connect("response", lambda _d, r: on_yes() if r == "download" else None)
+    dlg.present(win)
+    return dlg
+
+
+def _mb(n):
+    return f"{n / 1e6:.1f} MB"
+
+
+def confirm_ytdlp_download(win, reason, on_yes, on_no=None):
+    """Ask before fetching yt-dlp; nothing is downloaded unless the user agrees."""
+    def body(size, exact):
+        return (f"{reason}Astra Player can download the official yt-dlp "
+                f"({'' if exact else 'about '}{_mb(size)}) from github.com/yt-dlp/yt-dlp, check it "
+                f"against the release checksums and keep it in {youtube.MANAGED_DIR}. It then "
+                f"looks for a new version once a week, because YouTube changes often.\n\n"
+                f"You can turn this off in Preferences \u203a YouTube.")
+
+    dlg = Adw.AlertDialog(heading="Download yt-dlp?", body=body(youtube.MANAGED_SIZE, False))
+    dlg.add_response("cancel", "Not now")
+    dlg.add_response("download", f"Download {_mb(youtube.MANAGED_SIZE)}")
+    dlg.set_response_appearance("download", Adw.ResponseAppearance.SUGGESTED)
+    dlg.set_default_response("download")
+    dlg.set_close_response("cancel")
+
+    answered = []
+
+    def on_response(_d, response):
+        if answered:  # closing after a response must not count as a second answer
+            return
+        answered.append(response)
+        if response == "download":
+            on_yes()
+        elif on_no:
+            on_no()
+
+    def show_size(size):
+        dlg.set_body(body(size, True))
+        dlg.set_response_label("download", f"Download {_mb(size)}")
+        return False
+
+    def fetch_size():
+        size = youtube.remote_size()  # a HEAD request; the file itself is not fetched
+        if size:
+            GLib.idle_add(show_size, size)
+
+    dlg.connect("response", on_response)
+    threading.Thread(target=fetch_size, daemon=True).start()
+    dlg.present(win)
+    return dlg
+
+
+def youtube_consent(win, browsers, offer_ytdlp, on_allow):
+    """One-time consent to use a browser's YouTube login; on_allow(spec, get_ytdlp)."""
+    labels = [label for label, _spec in browsers]
+
+    def body(i):
+        return (f"YouTube needs a sign-in for this connection. Use your YouTube login from "
+                f"{labels[i]}?\n\nyt-dlp reads that browser\u2019s cookies on this computer and "
+                f"sends them only to YouTube. If that browser isn\u2019t signed in, Astra Player "
+                f"tries your other browsers. You can change this in Preferences \u203a YouTube.")
+
+    dlg = Adw.AlertDialog(heading="Sign in to YouTube?", body=body(0))
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+    dropdown = Gtk.DropDown.new_from_strings(labels)
+    dropdown.connect("notify::selected", lambda d, _p: dlg.set_body(body(d.get_selected())))
+    box.append(dropdown)
+    check = None
+    if offer_ytdlp:
+        check = Gtk.CheckButton(label=f"Also download the latest yt-dlp (about "
+                                      f"{_mb(youtube.MANAGED_SIZE)}) and keep it up to date")
+        box.append(check)
+    dlg.set_extra_child(box)
+    dlg.add_response("later", "Not now")
+    dlg.add_response("allow", "Allow")
+    dlg.set_response_appearance("allow", Adw.ResponseAppearance.SUGGESTED)
+    dlg.set_default_response("allow")
+    dlg.set_close_response("later")
+    dlg.connect("response", lambda _d, r: on_allow(browsers[dropdown.get_selected()][1],
+                                                   bool(check and check.get_active()))
+                if r == "allow" else None)
+    dlg.browser_dropdown, dlg.ytdlp_check = dropdown, check  # for the self-test
     dlg.present(win)
     return dlg
 
@@ -380,11 +463,64 @@ class PreferencesDialog:
         pick.connect("clicked", self._pick_cookies_file)
         file_row.add_suffix(pick)
         group.add(file_row)
+
+        self._ytdlp_busy = False
+        self._ytdlp_row = Adw.SwitchRow(
+            title="Keep yt-dlp up to date", active=self.win.settings["ytdlp_managed"],
+            subtitle=f"Use Astra Player\u2019s own copy from github.com/yt-dlp (about "
+                     f"{youtube.MANAGED_SIZE / 1e6:.0f} MB), checked weekly")
+        self._ytdlp_row.connect("notify::active", self._ytdlp_toggled)
+        group.add(self._ytdlp_row)
+        self._ytdlp_info = Adw.ActionRow(title="yt-dlp in use", subtitle="\u2026",
+                                         subtitle_selectable=True)
+        group.add(self._ytdlp_info)
+        self._refresh_ytdlp_info()
         return group
+
+    def _refresh_ytdlp_info(self, *_args):
+        def work():
+            prog = youtube.ytdlp_path()
+            version = youtube.ytdlp_version(prog) if prog else None
+            hint = youtube.SECRETSTORAGE_HINT if youtube.keyring_missing() else ""
+            GLib.idle_add(show, prog, version, hint)
+
+        def show(prog, version, hint):
+            text = f"{version or 'unknown version'}  \u00b7  {prog}" if prog else "Not installed"
+            self._ytdlp_info.set_subtitle(GLib.markup_escape_text(text + (f"\n{hint}" if hint else "")))
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _ytdlp_toggled(self, row, _pspec):
+        if self._ytdlp_busy:
+            return
+        s, win = self.win.settings, self.win
+        if not row.get_active():
+            s["ytdlp_managed"] = False
+            youtube.managed_enabled = False
+            self._refresh_ytdlp_info()
+            return
+        if youtube.managed_version():  # downloaded before: no need to ask again
+            s["ytdlp_managed"] = True
+            youtube.managed_enabled = True
+            self._refresh_ytdlp_info()
+            if youtube.update_due(s["ytdlp_last_check"]):
+                win._download_ytdlp(self._refresh_ytdlp_info, quiet=True)
+            return
+
+        def revert():
+            self._ytdlp_busy = True
+            row.set_active(False)
+            self._ytdlp_busy = False
+
+        win.get_ytdlp(lambda ok: self._refresh_ytdlp_info() if ok else revert(),
+                      reason="Astra Player will use its own yt-dlp instead of the one installed "
+                             "on the system. ")
 
     def _set_yt_source(self, source):
         self.win.settings["youtube_cookies"] = source
         youtube.cookie_source = source
+        self.win._yt_attempt = None
 
     def _yt_source_changed(self, row, _pspec):
         idx = row.get_selected()

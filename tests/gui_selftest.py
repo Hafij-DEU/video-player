@@ -17,12 +17,14 @@ os.environ.setdefault("XDG_CONFIG_HOME", tempfile.mkdtemp(prefix="astra-cfg-"))
 
 from gi.repository import GLib  # noqa: E402
 
-from astra_player import whisper  # noqa: E402
+from astra_player import whisper, youtube  # noqa: E402
 from astra_player.app import AstraApp  # noqa: E402
 from astra_player.playlist import path_to_uri  # noqa: E402
 from astra_player.shaders import SHADERS  # noqa: E402
 
 MEDIA = Path(tempfile.mkdtemp(prefix="astra-media-"))
+youtube.MANAGED_DIR = MEDIA / "managed-bin"  # never the real ~/.local/share
+youtube.remote_size = lambda tag=None: None  # no network
 FF = ["ffmpeg", "-v", "error", "-y"]
 # Spoken English sample from Ubuntu's whisper.cpp package (or ASTRA_SPEECH_WAV).
 SPEECH_WAV = next((p for p in (os.environ.get("ASTRA_SPEECH_WAV", ""),
@@ -340,29 +342,163 @@ def youtube_checks(win):
         pump(0.3)
         win.playlist.remove(len(win.playlist) - 1)
 
-        # A rate-limited connection: yt-dlp answers with YouTube's bot check.
-        args_log = MEDIA / "ytdlp-args.txt"
-        fake.write_text("#!/bin/sh\n"
-                        f"echo \"$@\" >> '{args_log}'\n"
-                        "echo \"ERROR: [youtube] abc: Sign in to confirm you’re not a bot. "
-                        "Use --cookies-from-browser\" >&2\nexit 1\n")
+        signin_checks(win, fake)
+        managed_ytdlp_checks(win, fake)
         from astra_player import youtube as yt
-        yt.cookie_source = ""
-        win.open_uris(["https://www.youtube.com/watch?v=abcdefghijk"])
-        check("bot check shows sign-in help", wait_for(
-            win, lambda: "sign-in needed" in (win.osd.get_label() or ""), 10)
-            and win.engine.uri is None, win.osd.get_label())
-        yt.cookie_source = "brave"
-        win.open_uris(["https://www.youtube.com/watch?v=abcdefghijk"])
-        wait_for(win, lambda: args_log.exists() and args_log.read_text().count("watch?v=") >= 4, 10)
-        check("browser sign-in passed to yt-dlp",
-              "--cookies-from-browser brave" in args_log.read_text().splitlines()[-1])
         yt.cookie_source = ""
         win.open_uris([path_to_uri(MEDIA / "a_clip.mkv")])
         wait_for(win, lambda: win.engine.playing and (win.engine.position() or 0) > 0.2)
         win._refresh_playlist()
     finally:
         os.environ["PATH"] = old_path
+
+
+def signin_checks(win, fake):
+    """YouTube's bot check: one-time consent, automatic replay, then the next browser.
+
+    The stand-in yt-dlp fails with the bot error unless it gets
+    --cookies-from-browser with the browser named in ok_browser.txt. No real
+    browser cookies are read: yt-dlp itself is never run here.
+    """
+    from astra_player import youtube as yt
+    args_log, ok_file = MEDIA / "ytdlp-args.txt", MEDIA / "ok_browser.txt"
+    video, audio = path_to_uri(MEDIA / "a_clip.mkv"), path_to_uri(MEDIA / "c_song.flac")
+    fake.write_text("#!/bin/sh\n"
+                    f"echo \"$*\" >> '{args_log}'\n"
+                    f"ok=$(cat '{ok_file}')\n"
+                    "case \" $* \" in *\" --cookies-from-browser $ok \"*)\n"
+                    f"  printf 'Stand-in video\\n%s\\n%s\\n' '{video}' '{audio}'; exit 0;;\n"
+                    "esac\n"
+                    "echo \"ERROR: [youtube] abcdefghijk: Sign in to confirm you’re not a bot. "
+                    "Use --cookies-from-browser or --cookies for the authentication.\" >&2\nexit 1\n")
+    ok_file.write_text("firefox")
+    saved_detect = yt.detect_browsers
+    yt.detect_browsers = lambda home=None: [("Brave", "brave"), ("Firefox", "firefox")]
+    osd_log = []
+    real_osd = win.show_osd
+
+    def logging_osd(text, ms=1800):
+        osd_log.append(text)
+        real_osd(text, ms)
+
+    win.show_osd = logging_osd
+    url = "https://www.youtube.com/watch?v=abcdefghijk"
+    try:
+        win.engine.stop()
+        win.settings["youtube_cookies"] = ""
+        yt.cookie_source = ""
+        win.open_uris([url])
+        ok = wait_for(win, lambda: win.get_visible_dialog() is not None, 10)
+        dlg = win.get_visible_dialog()
+        check("bot check asks for sign-in consent", ok and dlg.get_heading() == "Sign in to YouTube?"
+              and "Use your YouTube login from Brave?" in dlg.get_body()
+              and "sign-in needed" in (win.osd.get_label() or ""), dlg.get_heading() if dlg else "none")
+        log = args_log.read_text() if args_log.exists() else ""
+        check("no browser cookies before consent", "--cookies" not in log and win.engine.uri is None
+              and win.settings["youtube_cookies"] == "")
+        check("consent lists detected browsers", dlg is not None
+              and dlg.browser_dropdown.get_model().get_n_items() == 2 and dlg.ytdlp_check is not None)
+        if dlg is None:
+            return
+        args_log.write_text("")
+        dlg.browser_dropdown.set_selected(0)
+        dlg.emit("response", "allow")
+        dlg.close()
+        played = wait_for(win, lambda: win.engine.uri == video, 15)
+        lines = args_log.read_text().splitlines()
+        brave = [i for i, ln in enumerate(lines) if "--cookies-from-browser brave" in ln]
+        firefox = [i for i, ln in enumerate(lines) if "--cookies-from-browser firefox" in ln]
+        check("Allow replays the entry with Brave", bool(brave) and brave[0] == 0, str(lines[:1]))
+        check("falls back to the next browser", bool(firefox) and firefox[0] > brave[-1]
+              and "Trying Firefox\u2026" in osd_log, str(osd_log[-4:]))
+        check("plays once a browser works", played and win.playlist.current.title == "Stand-in video",
+              str(win.engine.uri))
+        check("working browser is remembered", win.settings["youtube_cookies"] == "firefox"
+              and yt.cookie_source == "firefox" and win._yt_attempt is None)
+
+        # Every browser fails: stop with a clear message and keep the user's choice.
+        win.engine.stop()
+        ok_file.write_text("none")
+        win.settings["youtube_cookies"] = yt.cookie_source = "brave"
+        osd_log.clear()
+        args_log.write_text("")
+        win.open_uris([url])
+        ok = wait_for(win, lambda: win.get_visible_dialog() is not None, 15)
+        dlg = win.get_visible_dialog()
+        lines = args_log.read_text().splitlines()
+        check("all browsers fail: clear message", ok and dlg.get_heading() == "YouTube still wants a sign-in"
+              and "sign in" in dlg.get_body() and "Trying Firefox\u2026" in osd_log
+              and sum("--cookies-from-browser" in ln for ln in lines) >= 2
+              and win.engine.uri is None, dlg.get_body()[:70] if dlg else str(osd_log))
+        check("choice restored after failing", yt.cookie_source == "brave"
+              and win.settings["youtube_cookies"] == "brave" and win._yt_attempt is None)
+        if dlg:
+            dlg.close()
+            pump(0.3)
+    finally:
+        del win.show_osd
+        yt.detect_browsers = saved_detect
+        win.settings["youtube_cookies"] = yt.cookie_source = ""
+
+
+def managed_ytdlp_checks(win, fake):
+    """Astra Player's own yt-dlp: asked first with the size, then preferred over PATH."""
+    from astra_player import youtube as yt
+    saved = yt.update_managed, yt.remote_size
+    yt.remote_size = lambda tag=None: 3_072_469
+    calls = []
+
+    def fake_update(progress=None, cancel=None):
+        calls.append(1)
+        yt.MANAGED_DIR.mkdir(parents=True, exist_ok=True)
+        yt.managed_path().write_text(fake.read_text())
+        yt.managed_path().chmod(0o755)
+        (yt.MANAGED_DIR / "yt-dlp.version").write_text("2026.10.01\n")
+        if progress:
+            progress(1.0)
+        return "2026.10.01", True
+
+    yt.update_managed = fake_update
+    try:
+        results_cb = []
+        win.get_ytdlp(results_cb.append, reason="Test. ")
+        pump(0.5)
+        dlg = win.get_visible_dialog()
+        check("yt-dlp download asks first with size", dlg is not None and dlg.get_heading() == "Download yt-dlp?"
+              and "3.1 MB" in dlg.get_body() and not calls and not yt.managed_path().exists(),
+              dlg.get_body()[:80] if dlg else "no dialog")
+        if dlg is None:
+            return
+        dlg.emit("response", "cancel")
+        dlg.close()
+        pump(0.2)
+        check("declined: nothing downloaded", results_cb == [False] and not calls
+              and not win.settings["ytdlp_managed"])
+        win.get_ytdlp(results_cb.append, reason="Test. ")
+        pump(0.3)
+        dlg = win.get_visible_dialog()
+        dlg.emit("response", "download")
+        dlg.close()
+        ok = wait_for(win, lambda: len(results_cb) == 2, 10)
+        check("managed yt-dlp installed and preferred", ok and results_cb[1] and calls
+              and win.settings["ytdlp_managed"] and yt.managed_enabled
+              and yt.ytdlp_path("") == str(yt.managed_path()), str(yt.ytdlp_path("")))
+        from astra_player import dialogs
+        prefs = dialogs.PreferencesDialog(win)
+        prefs.present()
+        shown = wait_for(win, lambda: "\u00b7" in (prefs._ytdlp_info.get_subtitle() or ""), 10)
+        check("Preferences shows yt-dlp in use", shown and prefs._ytdlp_row.get_active()
+              and str(yt.managed_path()) in prefs._ytdlp_info.get_subtitle(),
+              prefs._ytdlp_info.get_subtitle())
+        prefs._ytdlp_row.set_active(False)
+        check("switch off stops using it", not win.settings["ytdlp_managed"] and not yt.managed_enabled
+              and yt.ytdlp_path("") == str(fake))
+        prefs.dialog.close()
+        pump(0.3)
+    finally:
+        yt.update_managed, yt.remote_size = saved
+        yt.managed_enabled = False
+        win.settings["ytdlp_managed"] = False
 
 
 def whisper_checks(win):

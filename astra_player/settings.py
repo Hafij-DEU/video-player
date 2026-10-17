@@ -35,6 +35,9 @@ DEFAULTS = {
     "whisper_translate": False,
     "whisper_gpu": False,
     "youtube_cookies": "",  # "" | browser spec | "file:/path/cookies.txt"
+    "ytdlp_managed": False,  # use and update Astra Player's own yt-dlp
+    "ytdlp_last_check": 0.0,  # time of the last update check
+    "ytdlp_offered": False,  # the "get yt-dlp" dialog was shown once
 }
 
 # The app was called Kiln Player before 1.2.0.
