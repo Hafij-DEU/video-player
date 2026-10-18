@@ -883,8 +883,25 @@ class PlayerWindow(Adw.ApplicationWindow):
             GLib.source_remove(self._hide_timeout)
         self._hide_timeout = GLib.timeout_add(2500, self._autohide)
 
+    def _menu_open(self):
+        """True while a menu or other popover of this window is showing."""
+        stack = [self]
+        while stack:
+            widget = stack.pop()
+            if isinstance(widget, Gtk.Popover) and widget.get_visible():
+                return True
+            child = widget.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        return False
+
     def _autohide(self):
         self._hide_timeout = 0
+        if self.is_fullscreen() and self.engine.playing and self._menu_open():
+            # Hiding the bars would close a menu opened from them: look again later.
+            self._hide_timeout = GLib.timeout_add(2500, self._autohide)
+            return False
         if self.is_fullscreen() and self.engine.playing:
             self.view.set_reveal_top_bars(False)
             self.view.set_reveal_bottom_bars(False)

@@ -266,6 +266,30 @@ def v17_checks(win):
     win._arrange_controls(True)
     check("fullscreen moves options to header", win.extras.get_parent() is win.header_extras
           and win.controls.has_css_class("fs"))
+    # A menu opened from the bars must survive the bars' auto-hide.
+    win.is_fullscreen = lambda: True
+    try:
+        win.view.set_reveal_top_bars(True)
+        win.view.set_reveal_bottom_bars(True)
+        win.subs_btn.popup()
+        pump(0.3)
+        win._autohide()
+        pump(0.3)
+        check("fullscreen menu stays open", win.subs_btn.get_popover().get_visible()
+              and win.view.get_reveal_top_bars() and win._hide_timeout)
+        win.subs_btn.popdown()
+        pump(0.3)
+        win._autohide()
+        check("bars hide once the menu closes", not win.view.get_reveal_top_bars()
+              and not win.view.get_reveal_bottom_bars())
+    finally:
+        del win.is_fullscreen
+        if win._hide_timeout:
+            GLib.source_remove(win._hide_timeout)
+            win._hide_timeout = 0
+        win.view.set_reveal_top_bars(True)
+        win.view.set_reveal_bottom_bars(True)
+        win.set_cursor(None)
     win._arrange_controls(False)
     check("window layout restored", win.extras.get_parent() is win.start_box)
 
@@ -365,7 +389,7 @@ def youtube_checks(win):
     fake_bin = MEDIA / "fake-bin"
     fake_bin.mkdir()
     fake = fake_bin / "yt-dlp"
-    fake.write_text(f"#!/bin/sh\nsleep 0.3\ncat '{fixture}'\n")
+    fake.write_text(f"#!/bin/sh\nsleep 1.5\ncat '{fixture}'\n")  # long enough to see the spinner
     fake.chmod(0o755)
     old_path = os.environ["PATH"]
     os.environ["PATH"] = f"{fake_bin}{os.pathsep}{old_path}"
@@ -376,7 +400,8 @@ def youtube_checks(win):
         pump(0.1)
         dlg = win._search_dialog
         check("search dialog shows spinner", dlg.stack.get_visible_child_name() == "searching"
-              and dlg.entry.get_text() == "lofi")
+              and dlg.entry.get_text() == "lofi",
+              f"{dlg.stack.get_visible_child_name()} {dlg.entry.get_text()!r}")
         check("search results listed", wait_for(
             win, lambda: dlg.stack.get_visible_child_name() == "results", 10)
             and dlg.listbox.get_row_at_index(4) is not None, f"{len(dlg.results)} results")
