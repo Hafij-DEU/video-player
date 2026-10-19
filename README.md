@@ -1,128 +1,246 @@
+<div align="center">
+
+<img src="astra_player/icons/hicolor/scalable/apps/io.github.hafij.AstraPlayer.svg" width="96" alt="Astra Player icon">
+
 # Astra Player
 
-*Formerly Kiln Player. Installing Astra Player replaces the `kiln-player`
-package and carries over your settings, resume points and Whisper models.*
+**A free, PotPlayer-style media player for Linux.**<br>
+No ads. No account. No subscription. No codec packs to hunt for later.
 
-A free, PotPlayer-style media player for Linux. No ads, no account, no
-subscription, and no codec packs to download later: every decoder comes in
-with the package dependencies when you install it.
+[![Latest release](https://img.shields.io/github/v/release/Hafij-DEU/video-player?label=release&color=f5a623)](https://github.com/Hafij-DEU/video-player/releases/latest)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational)
+![GTK 4 + libadwaita](https://img.shields.io/badge/GTK%204-libadwaita-4a86cf)
+![GStreamer](https://img.shields.io/badge/engine-GStreamer%20%2B%20FFmpeg-8a2be2)
 
-Astra Player is written from scratch in Python with GTK 4, libadwaita and
-GStreamer. Decoding is done by FFmpeg (through `gst-libav`) and GStreamer,
-with VA-API hardware decoding when the GPU supports it. It contains no code
-from PotPlayer.
+[Download](https://github.com/Hafij-DEU/video-player/releases/latest) ·
+[Features](#features) ·
+[Hotkeys](#hotkeys) ·
+[YouTube help](#youtube) ·
+[Android app](https://github.com/Hafij-DEU/astra-player-android)
 
-## Features
+<img src="docs/screenshots/player.png" alt="Astra Player playing a video with subtitles and a clock" width="860">
 
-- **Formats**: H.264, HEVC/H.265, AV1, VP8/VP9, MPEG-1/2/4, VC-1/WMV, ProRes,
-  Theora; AAC, MP3, AC-3, E-AC-3, DTS, TrueHD, FLAC, ALAC, Opus, Vorbis, WMA,
-  APE, WavPack; MKV, MP4, MOV, AVI, TS/M2TS, WebM, FLV, OGG and more.
-- **Streams**: HTTP, HLS, DASH, RTSP, plus YouTube and other sites when
-  `yt-dlp` is installed.
-- **YouTube search**: Open › *Search YouTube…* (Ctrl+Y) lists results with
-  thumbnails, channel, length and views. Play one or add it to the playlist.
-  It uses `yt-dlp`, so it needs no API key and no account. Typing
-  `ytsearch:words` in Open URL runs the same search.
-- **Subtitles**: embedded tracks and external `.srt .ass .ssa .vtt .sub .smi`.
-  Picked up automatically from the video's folder or a `Subs`/`Subtitles`
-  subfolder: same name, name plus language (`movie.en.srt`), the same episode
-  code (`S01E02`, `1x02`, `Ep02`), or the only subtitle next to the only video.
-  All subtitles found are listed under Subtitles › *Subtitle files in this
-  folder*. Show **two subtitles at once** (Subtitles › *Second subtitle*), at
-  the top or above the first. Modern box or classic outline style, white,
-  yellow or cyan, four sizes, adjustable height (Alt+Up / Alt+Down); in
-  fullscreen they rise above the controls. Delay adjustment and Whisper too.
-- **Speech to subtitles**: Subtitles › *Generate subtitles (Whisper)…* turns
-  the speech in the current file into `<name>.whisper.srt` beside it, offline,
-  and loads it. Choose the model (tiny 78 MB, base 148 MB, small 488 MB),
-  the spoken language, and optional translation to English in Preferences.
-- **Audio**: track switching, 10-band equalizer with presets, volume up to 200%,
-  audio delay, and visualization for music.
-- **Playback**: speed 0.1×–8× with pitch correction, A-B repeat, frame stepping
-  forward and back, chapters, resume where you left off, shuffle, and a repeat
-  button that cycles play once / repeat file / repeat playlist.
-- **Record a portion**: press Record (Ctrl+R) to start and again to stop, or
-  set A and B, and save just that part to a new file. *Fast* copies the streams
-  losslessly and cuts at the nearest keyframe. *Precise* re-encodes to MP4 and
-  cuts on the exact frame. Works for YouTube too, through yt-dlp. Needs `ffmpeg`.
-- **Saved playlists** (Ctrl+B): save YouTube search results (one video with the
-  bookmark button, or all results at once) or the current queue into named
-  playlists kept inside the player. Play any of them later from any item,
-  rename, reorder, remove items, or delete the whole playlist. Stored in
-  `~/.local/share/astra-player/playlists.json`.
-- **Picture in picture** (Ctrl+P): a small borderless window. Drag the video
-  to move it and the corner grip to resize it. Hover to show its buttons: back
-  10 s, play/pause, forward 10 s, back to the window (or double-click / Esc),
-  back to fullscreen (or Enter), and close. On GNOME, press Alt+Space › Always
-  on Top to pin it above other windows.
-- **Fullscreen**: a compact, see-through control panel centred at the bottom
-  (back 10 s, previous, play, next, forward 10 s, volume) with the other options
-  in the top bar. Hover the seek bar for a **preview frame**. A **clock** shows in
-  a corner in fullscreen (Menu › Clock: in fullscreen, always, or off).
-- **Save streams** (Ctrl+S): download the whole video (YouTube and other sites via
-  yt-dlp) or record a live stream until you stop it (Playback › Cancel saving).
-- **Unsupported files** just say "Unsupported file" instead of a technical error.
-- **Updates**: checks GitHub once a day and offers one-click updates; apt then
-  also installs any new recommended extras (switch it off in Preferences).
-- **Video**: brightness, contrast, saturation and hue; rotate and flip
-  (follows phone rotation tags); aspect ratio presets; GLSL pixel shaders
-  (sharpen, soften, grayscale, sepia, night vision and more); screenshots.
-- **Playlist**: adds the rest of the folder automatically, reads and writes
-  M3U/M3U8/PLS, plays whole folders including subfolders (button, Ctrl+F, drag
-  a folder in, or *Open With* on a folder in Files), takes drag and drop.
-- **Desktop**: MPRIS (media keys, GNOME/KDE media controls), screensaver
-  inhibit while playing, single-window mode.
-- PotPlayer-style hotkeys (press **F1** in the app for the full list).
+</div>
+
+## Why Astra Player
+
+- **Every codec on install.** H.264, HEVC, AV1, VP9, ProRes, DTS, TrueHD and
+  more come in with the package dependencies. VA-API hardware decoding is used
+  when the GPU supports it.
+- **Streams and YouTube built in.** Search YouTube from the player, keep
+  playlists of what you find, and save videos or live streams to disk.
+- **Subtitles done right.** Found automatically in the video's folder, two at
+  once, modern styling, and offline speech-to-subtitles with Whisper.
+- **Familiar.** PotPlayer-style hotkeys and controls, rewritten from scratch
+  for GTK 4. It contains no PotPlayer code.
+- **Private.** Nothing is downloaded or read from your browser without asking.
 
 ## Install
 
+Download the latest `.deb` from
+[Releases](https://github.com/Hafij-DEU/video-player/releases/latest) and
+install it with apt, which also pulls in every codec:
+
 ```bash
-./packaging/build-deb.sh
-sudo apt install ./dist/astra-player_1.7.2_all.deb
+sudo apt install ./astra-player_1.7.2_all.deb
 ```
 
-The package pulls in `gstreamer1.0-libav` and the good, bad and ugly plugin
-sets, so every codec is installed at that point.
-`gstreamer1.0-plugins-extra` (VA-API), `yt-dlp` and `whisper.cpp` are
-recommended extras.
+**Requirements:** a Debian or Ubuntu system with Python 3.10+, GTK 4.14+ and
+libadwaita 1.5+. Developed and tested on Ubuntu 26.04.
 
-### YouTube says “Sign in to confirm you’re not a bot”
+After that, Astra Player checks GitHub once a day and offers one-click
+updates. Turn this off in Preferences.
+
+<details>
+<summary><b>Build the package from source</b></summary>
+
+```bash
+git clone https://github.com/Hafij-DEU/video-player.git
+cd video-player
+./packaging/build-deb.sh                 # writes dist/astra-player_<version>_all.deb
+sudo apt install ./dist/astra-player_*_all.deb
+```
+
+Or run it straight from the source tree without installing:
+
+```bash
+python3 -m astra_player video.mkv
+```
+
+</details>
+
+<details>
+<summary><b>What the package installs</b></summary>
+
+| | Packages |
+| --- | --- |
+| **Required** | GStreamer base, good, bad and ugly plugins, `gstreamer1.0-libav` (FFmpeg), `gstreamer1.0-gtk4`, `gstreamer1.0-gl`, GTK 4 and libadwaita bindings |
+| **Recommended** | `gstreamer1.0-plugins-extra` (VA-API), `gstreamer1.0-pipewire`, `yt-dlp`, `ffmpeg`, `whisper.cpp`, `python3-secretstorage` |
+| **Suggested** | `libggml0-backend-vulkan` (Whisper on the GPU) |
+
+apt installs recommended packages by default, so updates also bring in any new
+extras.
+
+</details>
+
+*Upgrading from Kiln Player?* Astra Player replaces the `kiln-player` package
+and keeps your settings, resume points and Whisper models.
+
+## Features
+
+<img src="docs/screenshots/fullscreen.png" alt="Fullscreen controls with a seek preview frame" width="100%">
+
+<sub>Fullscreen: a compact control panel at the bottom, the other options in
+the top bar, and a preview frame while you hover the seek bar.</sub>
+
+### Playback
+
+- **Formats:** H.264, HEVC/H.265, AV1, VP8/VP9, MPEG-1/2/4, VC-1/WMV, ProRes,
+  Theora; AAC, MP3, AC-3, E-AC-3, DTS, TrueHD, FLAC, ALAC, Opus, Vorbis, WMA,
+  APE, WavPack; MKV, MP4, MOV, AVI, TS/M2TS, WebM, FLV, OGG and more.
+  A file that can't be played just says "Unsupported file".
+- **Controls:** speed 0.1×–8× with pitch correction, A-B repeat, frame stepping
+  forward and back, chapters, ±10 s buttons, and resume where you left off.
+- **Repeat and shuffle:** one button cycles play once, repeat file and repeat
+  playlist.
+- **Seek preview:** hover the seek bar to see a frame from that point.
+- **Fullscreen:** a small see-through panel centred at the bottom, and a
+  clock in the corner (Menu › Clock: fullscreen only, always, or off).
+- **Picture in picture** (Ctrl+P): a small borderless window you can drag and
+  resize. Hover it for back 10 s, play/pause, forward 10 s, back to the window,
+  back to fullscreen, and close.
+
+### Streams and YouTube
+
+- **Streams:** HTTP, HLS, DASH and RTSP, plus YouTube and many other sites
+  through `yt-dlp`.
+- **YouTube search** (Ctrl+Y): results with thumbnails, channel, length and
+  views. No API key and no account needed. Typing `ytsearch:words` in Open URL
+  runs the same search.
+- **Saved playlists** (Ctrl+B): save one search result, all of them, or the
+  current queue into named playlists. Play, rename, reorder or delete them at
+  any time.
+- **Save streams** (Ctrl+S): download a whole video, or record a live stream
+  until you stop it (Playback › Cancel saving).
+- **Record a portion** (Ctrl+R): press once to start and again to stop, or set
+  A and B. *Fast* copies the streams losslessly to the nearest keyframe;
+  *Precise* re-encodes to MP4 on the exact frame. Works for YouTube too.
+
+### Subtitles
+
+- **Formats:** embedded tracks and external `.srt` `.ass` `.ssa` `.vtt` `.sub` `.smi`.
+- **Found automatically** in the video's folder or a `Subs`/`Subtitles`
+  subfolder: same name, name plus language (`movie.en.srt`), the same episode
+  code (`S01E02`, `1x02`, `Ep02`), or the only subtitle beside the only video.
+  Every match is listed under Subtitles › *Subtitle files in this folder*.
+- **Two subtitles at once** (Subtitles › *Second subtitle*), at the top or
+  just above the first. Handy for language learning.
+- **Style:** modern box or classic outline; white, yellow or cyan; four sizes;
+  adjustable height (Alt+Up / Alt+Down). In fullscreen they rise above the
+  controls.
+- **Speech to subtitles:** Subtitles › *Generate subtitles (Whisper)…* turns
+  the speech in a file into `<name>.whisper.srt`, offline, and loads it. Pick
+  the model (tiny 78 MB, base 148 MB, small 488 MB), the spoken language, and
+  optional translation to English.
+
+### Audio and video
+
+- **Audio:** track switching, 10-band equalizer with presets, volume up to
+  200%, audio delay, and a visualization for music.
+- **Video:** brightness, contrast, saturation and hue; rotate and flip
+  (follows phone rotation tags); aspect-ratio presets; GLSL shaders (sharpen,
+  soften, grayscale, sepia, night vision and more); screenshots.
+
+### Library and desktop
+
+- **Playlist:** adds the rest of the folder automatically, plays whole folders
+  with subfolders (button, Ctrl+F, drag and drop, or *Open With* in Files), and
+  reads and writes M3U, M3U8 and PLS.
+- **Desktop integration:** MPRIS (media keys and GNOME/KDE media controls),
+  no screen blanking while playing, single-window mode.
+
+## Hotkeys
+
+Press **F1** in the app for the full list. The most used:
+
+| Key | Action |
+| --- | --- |
+| <kbd>Space</kbd> | Play / pause |
+| <kbd>←</kbd> <kbd>→</kbd> | Seek 5 s (<kbd>Ctrl</kbd>: 30 s, <kbd>Shift</kbd>: 1 min) |
+| <kbd>↑</kbd> <kbd>↓</kbd>, mouse wheel | Volume |
+| <kbd>Enter</kbd>, double-click | Fullscreen |
+| <kbd>Page Up</kbd> <kbd>Page Down</kbd> | Previous / next file (<kbd>Ctrl</kbd>: chapter) |
+| <kbd>D</kbd> <kbd>F</kbd> | Previous / next frame |
+| <kbd>X</kbd> <kbd>C</kbd> <kbd>Z</kbd> | Slower / faster / normal speed |
+| <kbd>[</kbd> <kbd>]</kbd> <kbd>\\</kbd> | A-B repeat: set A / set B / clear |
+| <kbd>,</kbd> <kbd>.</kbd> <kbd>/</kbd> | Subtitle delay − / + / reset |
+| <kbd>Alt</kbd>+<kbd>↑</kbd> <kbd>Alt</kbd>+<kbd>↓</kbd> | Move subtitles up / down |
+| <kbd>Alt</kbd>+<kbd>H</kbd>, <kbd>Alt</kbd>+<kbd>L</kbd>, <kbd>Alt</kbd>+<kbd>A</kbd> | Toggle subtitles, next subtitle, next audio track |
+| <kbd>W</kbd><kbd>E</kbd> / <kbd>R</kbd><kbd>T</kbd> / <kbd>Y</kbd><kbd>U</kbd> / <kbd>I</kbd><kbd>O</kbd>, <kbd>Q</kbd> | Brightness / contrast / saturation / hue, reset |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> / <kbd>F</kbd> / <kbd>U</kbd> / <kbd>V</kbd> | Open files / folder / URL / clipboard |
+| <kbd>Ctrl</kbd>+<kbd>Y</kbd> | Search YouTube |
+| <kbd>Ctrl</kbd>+<kbd>B</kbd> | Saved playlists |
+| <kbd>Ctrl</kbd>+<kbd>S</kbd> | Save the video or stream |
+| <kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> | Record start/stop; save the A-B segment |
+| <kbd>Ctrl</kbd>+<kbd>L</kbd> | Repeat: once / file / playlist |
+| <kbd>Ctrl</kbd>+<kbd>P</kbd> | Picture in picture |
+| <kbd>Ctrl</kbd>+<kbd>E</kbd> | Screenshot |
+| <kbd>F6</kbd> / <kbd>F5</kbd> / <kbd>Ctrl</kbd>+<kbd>F1</kbd> / <kbd>Tab</kbd> | Playlist / preferences / media info / status |
+| Right-click | Full menu |
+
+## YouTube
+
+<details>
+<summary><b>“Sign in to confirm you’re not a bot”</b></summary>
 
 YouTube sometimes rate-limits a connection (HTTP 429) and then refuses
-anonymous playback. When that happens, Astra Player asks once whether it may
-use your YouTube login from a browser on this computer (Brave, Chrome,
-Chromium, Edge, Firefox, Opera or Vivaldi). Pick one and press **Allow**: the
-video starts again where it was. If that browser isn't signed in, Astra Player
-tries your other browsers by itself, and remembers the one that works. yt-dlp
-reads the cookies on this computer and sends them only to YouTube. Nothing is
-read before you allow it, and you can change or turn off the choice, or use a
-`cookies.txt` export, in Preferences › YouTube.
+anonymous playback. Astra Player then asks once whether it may use your
+YouTube login from a browser on this computer: Brave, Chrome, Chromium, Edge,
+Firefox, Opera or Vivaldi, including Snap and Flatpak installs. Pick one and
+press **Allow**, and the video starts again where it was.
+
+- If that browser isn't signed in, Astra Player tries your other browsers and
+  remembers the one that works.
+- yt-dlp reads the cookies on this computer and sends them only to YouTube.
+- Nothing is read before you allow it. Change the choice, turn it off, or use
+  a `cookies.txt` export in Preferences › YouTube.
 
 If no browser works, sign in to YouTube in one of them and play the video
-again, or wait a few hours: the limit is lifted by itself.
+again, or wait a few hours for the limit to lift.
 
-For Chrome-based browsers yt-dlp needs the `secretstorage` Python module to
-open the GNOME keyring. Astra Player checks for it and, if its own yt-dlp
-lacks it, uses a system yt-dlp that has it:
+Chrome-based browsers keep their cookie key in the GNOME keyring, which
+yt-dlp opens with the `secretstorage` Python module:
 
 ```bash
-sudo apt install python3-secretstorage      # for the apt yt-dlp and Astra Player's own copy
-pipx inject yt-dlp secretstorage            # for a pipx yt-dlp
+sudo apt install python3-secretstorage      # apt yt-dlp and Astra Player's own copy
+pipx inject yt-dlp secretstorage            # a pipx yt-dlp
 ```
 
-### Keeping yt-dlp current
+</details>
+
+<details>
+<summary><b>Keeping yt-dlp current</b></summary>
 
 YouTube changes often, and an old yt-dlp is a common reason for playback to
-fail. Turn on Preferences › YouTube › *Keep yt-dlp up to date* (or tick the box
-in the sign-in dialog) and Astra Player downloads the official yt-dlp
-(about 3 MB) from [its GitHub releases](https://github.com/yt-dlp/yt-dlp/releases),
-checks it against the release's `SHA2-256SUMS`, and keeps it in
-`~/.local/share/astra-player/bin`. It then looks for a new release once a week
-and uses that copy in place of the system one. Astra Player always asks, with
-the size, before the first download. On a computer without yt-dlp, opening a
-YouTube link offers the same download.
+fail. Turn on Preferences › YouTube › *Keep yt-dlp up to date* (or tick the
+box in the sign-in dialog). Astra Player then:
 
-### Speech to subtitles
+1. Asks first, showing the size (about 3 MB).
+2. Downloads the official yt-dlp from
+   [its GitHub releases](https://github.com/yt-dlp/yt-dlp/releases).
+3. Checks it against the release's `SHA2-256SUMS`.
+4. Keeps it in `~/.local/share/astra-player/bin` and looks for a new release
+   once a week.
+
+Astra Player picks the yt-dlp best able to play YouTube: one that can solve
+YouTube's JavaScript challenges and open the browser keyring. It uses Node.js,
+Deno, Bun or QuickJS for the challenges, whichever is installed.
+
+</details>
+
+<details>
+<summary><b>Speech to subtitles (Whisper)</b></summary>
 
 Subtitle generation uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
 and runs on your own computer. Install one engine:
@@ -138,72 +256,75 @@ Without root, the Python binding works too:
 pip install --user --break-system-packages pywhispercpp
 ```
 
-Astra Player never downloads anything on its own. The first time you generate
-subtitles it asks before it fetches the chosen model from huggingface.co, and
-the dialog shows the size. Models are checked against their SHA-256 and kept in
-`~/.local/share/astra-player/models`. Audio is extracted with `ffmpeg` when it is
-installed, otherwise with GStreamer.
+The first time you generate subtitles, Astra Player asks before it fetches the
+chosen model from huggingface.co and shows the size. Models are checked
+against their SHA-256 and kept in `~/.local/share/astra-player/models`. Audio
+is extracted with `ffmpeg` when installed, otherwise with GStreamer.
 
-Run from the source tree without installing:
+</details>
 
-```bash
-python3 -m astra_player video.mkv
+## Privacy
+
+Astra Player has no telemetry and no account. It connects to the internet
+only for:
+
+- media you open from a URL or YouTube,
+- the daily update check against GitHub (switch it off in Preferences),
+- downloads you confirm: a Whisper model or the managed yt-dlp.
+
+## Development
+
+```
+astra_player/
+├── app.py, window.py      application and main window
+├── engine.py              GStreamer playbin, GL video chain, subtitle styling
+├── playlist.py            playlists, folder scan, subtitle matching
+├── subparse.py            SRT/VTT/ASS parser for the second subtitle
+├── thumbnailer.py         seek-preview frames from a second pipeline
+├── youtube.py             yt-dlp, browser sign-in, search
+├── export.py              recording, clipping and saving streams
+├── whisper.py             speech to subtitles
+├── updater.py             daily GitHub release check
+└── pip.py, mpris.py, …    picture in picture, media keys
 ```
 
-## Hotkeys
+### Tests
 
-| Key | Action |
-| --- | --- |
-| Space | Play / pause |
-| Left / Right | Seek 5 s (Ctrl: 30 s, Shift: 1 min) |
-| Up / Down, mouse wheel | Volume |
-| Enter, double-click | Fullscreen |
-| Page Up / Page Down | Previous / next file (Ctrl: chapter) |
-| D / F | Previous / next frame |
-| X / C / Z | Slower / faster / normal speed |
-| `[` `]` `\` | A-B repeat: set A / set B / clear |
-| `,` `.` `/` | Subtitle delay − / + / reset |
-| Alt+H, Alt+L, Alt+A | Toggle subtitles, next subtitle, next audio track |
-| W E / R T / Y U / I O, Q | Brightness / contrast / saturation / hue, reset |
-| Ctrl+E | Screenshot |
-| Ctrl+O, Ctrl+F, Ctrl+U, Ctrl+V | Open files, folder, URL, clipboard |
-| Ctrl+L | Repeat: once / file / playlist |
-| Ctrl+R, Ctrl+Shift+R | Record start/stop and save; save A-B segment |
-| Ctrl+P | Picture in picture |
-| Ctrl+B | Saved playlists |
-| Ctrl+Y | Search YouTube |
-| F6 / F5 / Ctrl+F1 / Tab | Playlist / preferences / media info / status |
-| Right-click | Full menu |
+The unit tests need no display and no network. They use canned `yt-dlp`
+output, a local stand-in for GitHub, and never read browser cookies or write
+to `~/.local/share`:
 
-## Tests
+```bash
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
 The GUI end-to-end test generates its own media with `ffmpeg` and drives a
-real window:
+real window on a private X server. `dbus-run-session` keeps it from handing
+off to an Astra Player already open on your desktop:
 
 ```bash
 Xvfb :77 -screen 0 1280x800x24 &
 DISPLAY=:77 GDK_BACKEND=x11 dbus-run-session python3 tests/gui_selftest.py
 ```
 
-`dbus-run-session` keeps the test from handing off to a Astra Player that is
-already open on your desktop.
+The speech-recognition checks run only when a Whisper engine and a downloaded
+model are present. They use the spoken sample from the `whisper.cpp` package,
+or the WAV file named by `ASTRA_SPEECH_WAV`. The tests never download a model.
 
-The unit tests need no display and no network. The YouTube test parses canned
-`yt-dlp` output from `tests/fixtures/`, and checks the browser fallback order,
-which yt-dlp is chosen, the weekly update schedule and the checksum check
-against a local stand-in for GitHub. The GUI test drives the sign-in dialog
-with a stand-in yt-dlp. No test reads browser cookies or writes to
-`~/.local/share`:
+## Related
 
-```bash
-python3 -m unittest tests/test_whisper.py tests/test_youtube.py
-```
+- [Astra Player for Android](https://github.com/Hafij-DEU/astra-player-android):
+  the same player for phones, with YouTube search and streaming.
 
-The speech-recognition checks in both tests run only when a speech engine and a
-downloaded model are present. They use the spoken sample from the `whisper.cpp`
-package, or the WAV file named by `ASTRA_SPEECH_WAV`. Otherwise they are
-skipped. The tests never download a model.
+## Credits and license
 
-## License
+Built on [GStreamer](https://gstreamer.freedesktop.org/),
+[FFmpeg](https://ffmpeg.org/), [GTK](https://gtk.org/) and
+[libadwaita](https://gnome.pages.gitlab.gnome.org/libadwaita/), with
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) for streams and
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp) for speech recognition.
 
-GPL-3.0-or-later. See `LICENSE`.
+Astra Player is an independent project. It is not affiliated with PotPlayer or its
+developers and contains none of their code.
+
+Released under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
