@@ -82,13 +82,18 @@ class AstraApp(Adw.Application):
             application_name="Astra Player",
             application_icon=APP_ID,
             version=__version__,
-            developer_name="Hafij",
+            developer_name="Md. Hafijur Rahman",
+            developers=["Md. Hafijur Rahman <hafijurrahman.hr10@gmail.com>"],
+            copyright="\u00a9 2026 Md. Hafijur Rahman",
             license_type=Gtk.License.GPL_3_0,
             comments="A free media player for Linux with every codec built in.\n"
-                     "Built on GStreamer and FFmpeg (gst-libav).",
-            website="https://github.com/Hafij-DEU/video-player",
+                     "Built on GStreamer and FFmpeg (gst-libav).\n\n"
+                     "This app was generated with AI. Developer support may not be available.",
+            website="https://hafij-bge.github.io",
             issue_url="https://github.com/Hafij-DEU/video-player/issues",
         )
+        about.add_link("GitHub", "https://github.com/Hafij-DEU/video-player")
+        about.add_link("Email", "mailto:hafijurrahman.hr10@gmail.com")
         about.present(self.window)
 
 
