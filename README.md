@@ -43,7 +43,7 @@ Download the latest `.deb` from
 install it with apt, which also pulls in every codec:
 
 ```bash
-sudo apt install ./astra-player_1.7.3_all.deb
+sudo apt install ./astra-player_1.7.4_all.deb
 ```
 
 **Requirements:** a Debian or Ubuntu system with Python 3.10+, GTK 4.14+ and
