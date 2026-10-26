@@ -28,8 +28,8 @@ No ads. No account. No subscription. No codec packs to hunt for later.
 - **Every codec on install.** H.264, HEVC, AV1, VP9, ProRes, DTS, TrueHD and
   more come in with the package dependencies. VA-API hardware decoding is used
   when the GPU supports it.
-- **Streams and YouTube built in.** Search YouTube from the player, keep
-  playlists of what you find, and save videos or live streams to disk.
+- **Network streams built in.** Open web streams and web video pages, search
+  from the player, keep playlists of what you find, and save streams to disk.
 - **Subtitles done right.** Found automatically in the video's folder, two at
   once, modern styling, and offline speech-to-subtitles with Whisper.
 - **Familiar.** PotPlayer-style hotkeys and controls, rewritten from scratch
@@ -43,7 +43,7 @@ Download the latest `.deb` from
 install it with apt, which also pulls in every codec:
 
 ```bash
-sudo apt install ./astra-player_1.7.4_all.deb
+sudo apt install ./astra-player_1.7.5_all.deb
 ```
 
 **Requirements:** a Debian or Ubuntu system with Python 3.10+, GTK 4.14+ and
@@ -111,10 +111,10 @@ the top bar, and a preview frame while you hover the seek bar.</sub>
   resize. Hover it for back 10 s, play/pause, forward 10 s, back to the window,
   back to fullscreen, and close.
 
-### Streams and YouTube
+### Streams and web video
 
-- **Streams:** HTTP, HLS, DASH and RTSP, plus YouTube and many other sites
-  through `yt-dlp`.
+- **Streams:** HTTP, HLS, DASH and RTSP, plus the many sites supported by
+  `yt-dlp`.
 - **YouTube search** (Ctrl+Y): results with thumbnails, channel, length and
   views. No API key and no account needed. Typing `ytsearch:words` in Open URL
   runs the same search.
@@ -327,4 +327,8 @@ Built on [GStreamer](https://gstreamer.freedesktop.org/),
 Astra Player is an independent project. It is not affiliated with PotPlayer or its
 developers and contains none of their code.
 
-Released under **GPL-3.0-or-later**. See [LICENSE](LICENSE).
+Released under **GPL-3.0-or-later**. See [LICENSE](LICENSE). Copyright © 2026 Md. Hafijur Rahman.
+
+This app was generated with AI. Developer support may not be available.
+
+Astra Player is a general-purpose media player. Users are responsible for complying with the terms of service and copyright of the content they play or download. It is not affiliated with any website.

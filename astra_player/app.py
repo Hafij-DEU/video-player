@@ -88,10 +88,16 @@ class AstraApp(Adw.Application):
             license_type=Gtk.License.GPL_3_0,
             comments="A free media player for Linux with every codec built in.\n"
                      "Built on GStreamer and FFmpeg (gst-libav).\n\n"
+                     "Users are responsible for complying with the terms of service and "
+                     "copyright of the content they play or download.\n\n"
                      "This app was generated with AI. Developer support may not be available.",
             issue_url="https://github.com/Hafij-DEU/video-player/issues",
         )
         about.add_link("GitHub", "https://github.com/Hafij-DEU/video-player")
+        about.add_acknowledgement_section("Built with", [
+            "GStreamer https://gstreamer.freedesktop.org", "FFmpeg https://ffmpeg.org",
+            "yt-dlp https://github.com/yt-dlp/yt-dlp", "whisper.cpp https://github.com/ggml-org/whisper.cpp",
+            "GTK 4 https://gtk.org", "libadwaita https://gnome.pages.gitlab.gnome.org/libadwaita/"])
         about.present(self.window)
 
 
