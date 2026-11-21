@@ -90,13 +90,40 @@ def _save(path, data):
         pass
 
 
+def _valid(key, value):
+    """True when a stored value has the same kind as its default (else the default is kept)."""
+    default = DEFAULTS[key]
+    if isinstance(default, bool):
+        return isinstance(value, bool)
+    if isinstance(default, (int, float)):
+        return _valid_number(value)
+    if isinstance(default, str):
+        return isinstance(value, str)
+    if isinstance(default, list):
+        if not isinstance(value, list):
+            return False
+        if key == "eq_bands":
+            return len(value) == len(default) and all(
+                _valid_number(b) for b in value)
+        return True
+    return True
+
+
+def _valid_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and value == value and abs(value) != float("inf")
+
+
 class Settings:
     def __init__(self):
         migrate_legacy()
         self.data = dict(DEFAULTS)
         stored = _load(SETTINGS_FILE, {})
         if isinstance(stored, dict):
-            self.data.update({k: v for k, v in stored.items() if k in DEFAULTS})
+            self.data.update({k: v for k, v in stored.items()
+                              if k in DEFAULTS and _valid(k, v)})
+        # keep the usable recent entries even if a few are damaged
+        self.data["recent"] = [u for u in self.data["recent"] if isinstance(u, str)]
         resume = _load(RESUME_FILE, {})
         self.resume = resume if isinstance(resume, dict) else {}
 

@@ -27,17 +27,63 @@ def _clean(text):
     return html.unescape(_TAGS.sub("", text)).strip()
 
 
-def _read(path):
-    raw = Path(path).read_bytes()
-    for enc in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+# Bytes where cp1254 (Turkish) and cp1252 (Western) differ: Ğ İ Ş ğ ı ş vs Ð Ý Þ ð ý þ.
+_TR_BYTES = frozenset(b"\xd0\xdd\xde\xf0\xfd\xfe")
+
+
+def _utf16_no_bom(raw):
+    """'utf-16-le' / 'utf-16-be' when raw looks like BOM-less UTF-16 text, else None."""
+    sample = raw[:4096]
+    half = len(sample) // 2
+    if half < 2:
+        return None
+    even = sample[0::2].count(0)
+    odd = sample[1::2].count(0)
+    if odd > half * 0.3 and even < half * 0.05:
+        return "utf-16-le"
+    if even > half * 0.3 and odd < half * 0.05:
+        return "utf-16-be"
+    return None
+
+
+def decode_legacy(raw):
+    """Decode non-UTF-8 text, choosing between Turkish, Western and Arabic code pages."""
+    high = sum(1 for b in raw if b >= 0x80)
+    letters = sum(1 for b in raw if 0x41 <= b <= 0x5A or 0x61 <= b <= 0x7A)
+    order = ["cp1252", "cp1254", "latin-1"]
+    if high and high > letters:
+        order.insert(0, "cp1256")  # mostly non-Latin letters: Arabic script
+    elif any(b in _TR_BYTES for b in raw):
+        order.insert(0, "cp1254")  # Turkish letters (cp1252 would give Þ ý Ð ...)
+    for enc in order:
         try:
-            text = raw.decode(enc)
-            if enc == "utf-16" and not raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
-                continue
-            return text
+            return raw.decode(enc)
         except UnicodeDecodeError:
             continue
-    return raw.decode("utf-8", "replace")
+    return raw.decode("latin-1")
+
+
+def decode_text(raw):
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        try:
+            return raw.decode("utf-16")
+        except UnicodeDecodeError:
+            pass
+    enc = _utf16_no_bom(raw)  # before UTF-8: NUL bytes are valid UTF-8 too
+    if enc:
+        try:
+            return raw[:len(raw) - len(raw) % 2].decode(enc)
+        except UnicodeDecodeError:
+            pass
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    return decode_legacy(raw)
+
+
+def _read(path):
+    return decode_text(Path(path).read_bytes())
 
 
 def parse_srt_vtt(text):
@@ -82,18 +128,31 @@ class Cues:
     def __init__(self, cues):
         self.cues = sorted(cues)
         self.starts = [c[0] for c in self.cues]
+        # Precompute the text of every interval between cue boundaries, so a long cue
+        # stays visible however many short cues overlap it, and lookups stay O(log n).
+        events = {}
+        for i, (start, end, _body) in enumerate(self.cues):
+            if end > start:
+                events.setdefault(start, [[], []])[0].append(i)
+                events.setdefault(end, [[], []])[1].append(i)
+        self._times = sorted(events)
+        self._texts = []
+        active = set()
+        for t in self._times:
+            add, drop = events[t]
+            active.difference_update(drop)
+            active.update(add)
+            self._texts.append("\n".join(self.cues[i][2] for i in sorted(active)))
 
     def __len__(self):
         return len(self.cues)
 
     def at(self, t):
         """Text of every cue showing at time t (overlapping cues are joined)."""
-        i = bisect.bisect_right(self.starts, t)
-        lines = []
-        for start, end, body in self.cues[max(0, i - 8):i]:
-            if start <= t < end:
-                lines.append(body)
-        return "\n".join(lines)
+        k = bisect.bisect_right(self._times, t) - 1
+        if k < 0:
+            return ""
+        return self._texts[k]
 
 
 def load(path):

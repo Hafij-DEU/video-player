@@ -148,9 +148,14 @@ def find_subtitle(uri):
 def read_playlist_file(path):
     path = Path(path)
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        raw = path.read_bytes()
     except OSError:
         return []
+    if ext_of(path) == "m3u8":
+        text = raw.decode("utf-8-sig", errors="replace")  # .m3u8 is UTF-8 by definition
+    else:
+        from .subparse import decode_text  # UTF-8, UTF-16, then cp1254/cp1252/... guess
+        text = decode_text(raw)
     out = []
     if ext_of(path) == "pls":
         for line in text.splitlines():
@@ -158,7 +163,8 @@ def read_playlist_file(path):
             if m:
                 out.append(m.group(1).strip())
     else:
-        out = [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")]
+        out = [ln.strip() for ln in text.splitlines()
+               if ln.strip() and not ln.strip().startswith("#")]
     uris = []
     for entry in out:
         if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", entry):
@@ -171,12 +177,19 @@ def read_playlist_file(path):
     return uris
 
 
+_LINE_BREAKS = re.compile(r"[\r\n\x0b\x0c\x1c-\x1e\x85\u2028\u2029]+")
+
+
 def write_playlist_file(path, entries):
     lines = ["#EXTM3U"]
     for entry in entries:
-        lines.append(f"#EXTINF:-1,{entry.title}")
+        title = _LINE_BREAKS.sub(" ", str(entry.title or ""))
+        lines.append(f"#EXTINF:-1,{title}")
         local = uri_to_path(entry.uri)
-        lines.append(str(local) if local else entry.uri)
+        if local and not _LINE_BREAKS.search(str(local)):
+            lines.append(str(local))
+        else:  # a line break in a file name would split the entry; the URI is escaped
+            lines.append(entry.uri)
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
