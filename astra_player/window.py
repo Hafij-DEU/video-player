@@ -542,6 +542,10 @@ class PlayerWindow(Adw.ApplicationWindow):
             clock.append_item(item(label, "win.clock", GLib.Variant.new_string(key)))
         sec.append_submenu("Clock", clock)
         sec.append("Media info", "win.media-info")
+        look = Gio.Menu()
+        for key, label in (("follow", "Follow Harbor Settings"), ("planner", "Glass (Planner)"), ("normal", "Normal")):
+            look.append_item(item(label, "win.look", GLib.Variant.new_string(key)))
+        sec.append_submenu("Look", look)
         self.main_menu.append_section(None, sec)
         sec = Gio.Menu()
         sec.append("Preferences", "win.preferences")
@@ -658,6 +662,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         add("sub2-later", simple(lambda: self._shift_sub2(0.5)))
         add("sub2-earlier", simple(lambda: self._shift_sub2(-0.5)))
         add("sub-style", self._act_sub_look, "s", GLib.Variant.new_string(self.settings["sub_style"]))
+        add("look", self._act_look, "s", GLib.Variant.new_string(self.app.look.choice()))
         add("sub-color", self._act_sub_look, "s", GLib.Variant.new_string(self.settings["sub_color"]))
         add("sub-size", self._act_sub_size, "i", GLib.Variant.new_int32(self._sub_font_size()))
         add("sub-up", simple(lambda: self.move_subtitle(-0.03)))
@@ -2156,6 +2161,10 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.sub2_label.set_attributes(None)
         self._style_sub2()
         self.show_osd(f"Subtitle size {param.get_int32()}")
+
+    def _act_look(self, action, param):
+        action.set_state(param)
+        self.app.look.set_choice(param.get_string())
 
     def _act_sub_look(self, action, param):
         action.set_state(param)

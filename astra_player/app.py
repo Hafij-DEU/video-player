@@ -39,6 +39,11 @@ class AstraApp(Adw.Application):
         css = Gtk.CssProvider()
         css.load_from_path(str(HERE / "style.css"))
         Gtk.StyleContext.add_provider_for_display(display, css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        # Planner Glass look (Harbor Settings or Look in the main menu), above style.css
+        from .look import AstraLook
+        look_css = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(display, look_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        self.look = AstraLook(look_css)
         icons = HERE / "icons"
         if icons.is_dir():
             Gtk.IconTheme.get_for_display(display).add_search_path(str(icons))
