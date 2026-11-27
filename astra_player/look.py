@@ -2,7 +2,7 @@
 
 Follows Harbor Settings (~/.config/harbor/glass-astra, then the shared glass
 files) or the user's own choice in the main menu: Look > Follow Harbor
-Settings / Glass (Planner) / Normal. Spec: ~/Music/apps/glass-theme/PLANNER-SPEC.md
+Settings / Lumina Glass / Normal. Spec: ~/Music/apps/glass-theme/PLANNER-SPEC.md
 """
 
 from . import planner_glass
