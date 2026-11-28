@@ -403,11 +403,11 @@ class PreferencesDialog:
         group.add(theme)
         page.add(group)
 
-        lum = Adw.PreferencesGroup(title="Lumina", description="Only while Lumina Glass is on. "
+        lum = Adw.PreferencesGroup(title="Lumina Glass options", description="Shown while the theme is Lumina Glass. "
                                    "Harbor Settings can set the same globally or for Astra.")
         spec = look.spec
         style_keys = ["CALM", "COLOURFUL"]
-        style = Adw.ComboRow(title="Style", model=Gtk.StringList.new(["Calm glass", "Colourful"]))
+        style = Adw.ComboRow(title="Look", model=Gtk.StringList.new(["Calm glass", "Colourful"]))
         style.set_selected(style_keys.index(spec.get("lumina", "CALM")))
         lum.add(style)
         names = {"AURORA": "Aurora (pink, violet, sky)", "SUNSET": "Sunset (orange, pink, violet)",
