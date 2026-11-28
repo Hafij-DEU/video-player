@@ -29,6 +29,11 @@ LUMINA_CSS = f"""
 toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
   background-color: transparent; background-image: none; }}
 .controls {{ {L_GLASS} border-top: {L_RIM}; box-shadow: {L_EDGE}; }}
+/* Lumina dock: a smaller floating glass pill, centred (width set by the window),
+   floating on the same black as the video */
+toolbarview > .bottom-bar {{ background-color: #000000; }}
+.controls.dock {{ margin: 0 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: {L_RIM};
+  box-shadow: {L_EDGE}, 0 14px 30px -14px rgba(0,0,0,0.65); }}
 .controls.fs {{ {L_GLASS} margin: 0 14px 14px; border-radius: 18px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65); }}
 .controls .time {{ color: #aaa7c8; }}
@@ -96,13 +101,14 @@ toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shad
 headerbar {{ {bar} box-shadow: inset 0 -1px {rim}; }}
 headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls {{ {bar} border-top: 1px solid {rim}; box-shadow: inset 0 1px {edge}; }}
+.controls.dock {{ margin: 0 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: 1px solid {rim};
+  box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
 .controls.fs {{ {bar} margin: 0 14px 14px; border-radius: 18px; border: 1px solid {rim};
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
 .controls button.ctl, .controls.fs button.ctl {{ color: {text}; }}
-/* icons in three colours, like Astra Android's tabs; text stays neutral */
-.controls button.ctl:nth-child(3n+1), .controls .transport > button:nth-child(3n+1) {{ color: {t["i1"]}; }}
-.controls button.ctl:nth-child(3n+2), .controls .transport > button:nth-child(3n+2) {{ color: {t["i2"]}; }}
-.controls button.ctl:nth-child(3n), .controls .transport > button:nth-child(3n) {{ color: {t["i3"]}; }}
+/* one hue: tool icons neutral, transport icons in the main colour */
+.controls button.ctl {{ color: {soft}; }}
+.controls .transport > button {{ color: {t["i2"]}; }}
 .controls .time {{ color: {soft}; }}
 .controls .transport button:hover, .controls button.ctl:hover {{ background-color: {_rgba(c2, 0.14)}; }}
 .controls .transport button.play, .controls.fs .transport button.ctl.play {{
@@ -112,14 +118,14 @@ headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls .transport button.play:hover {{ opacity: 0.92; background-color: {c2}; }}
 .controls .transport > button.play, .controls.fs .transport > button.ctl.play {{ color: #ffffff; }}
 /* switched-on tools sit on a small glossy colour chip */
-.controls button.active-toggle {{ color: {t["i1"]}; background-color: {_rgba(c1, 0.11)}; background-image: {gloss};
-  box-shadow: inset 0 0 0 1px {_rgba(c1, 0.20)}; border-radius: 10px; }}
-.badge-info {{ color: {ink(c1)}; }}
+.controls button.active-toggle {{ color: {t["i2"]}; background-color: {_rgba(c2, 0.11)}; background-image: {gloss};
+  box-shadow: inset 0 0 0 1px {_rgba(c2, 0.20)}; border-radius: 10px; }}
+.badge-info {{ color: {t["i2"]}; }}
 scale.seekbar trough, .controls.fs scale.seekbar trough {{ background-color: {_rgba(c2, 0.16)}; }}
 scale.seekbar highlight, scale trough highlight {{ background-color: {c2};
   background-image: linear-gradient(to right, {c1}, {c2}, {c3}); }}
 scale.seekbar slider {{ background-color: #ffffff; box-shadow: 0 0 0 2px {c2}; }}
-scale.seekbar marks indicator {{ color: {ink(c1)}; }}
+scale.seekbar marks indicator {{ color: {t["i2"]}; }}
 .playlist-panel {{ {bar} border-left: 1px solid {rim}; }}
 .playlist row {{ border-radius: 12px; margin: 1px 6px; }}
 .playlist row:hover {{ background-color: {_rgba(c2, 0.10)}; }}
@@ -162,6 +168,7 @@ class AstraLook:
 
     def __init__(self, provider):
         self.provider = provider
+        self.listeners = []   # window callbacks (the floating control dock)
         self.mode = load_mode()
         self.style = Adw.StyleManager.get_default()
         self.style.connect("notify::dark", lambda *_: self.apply())
@@ -216,3 +223,5 @@ class AstraLook:
             if css:
                 css += LUMINA_CSS
         self.provider.load_from_string(css)
+        for cb in self.listeners:
+            cb()

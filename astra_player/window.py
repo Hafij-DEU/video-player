@@ -378,6 +378,9 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.view.add_top_bar(header)
         self.view.add_bottom_bar(self.controls_clamp)
         self.view.set_bottom_bar_style(Adw.ToolbarStyle.RAISED_BORDER)
+        # Lumina: the control bar becomes a smaller, centred floating glass dock
+        self.app.look.listeners.append(self._apply_dock)
+        self._apply_dock()
         self.set_content(self.view)
         self._update_volume_ui()
         self._refresh_playlist()
@@ -2133,8 +2136,8 @@ class PlayerWindow(Adw.ApplicationWindow):
                     child.set_direction(menu_dir)
                 child = child.get_next_sibling()
         self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs else Adw.ToolbarStyle.RAISED_BORDER)
-        self.controls_clamp.set_maximum_size(860 if fs else 100000)
-        self.controls_clamp.set_tightening_threshold(860 if fs else 100000)
+        self.controls_clamp.set_maximum_size(860 if fs else self._dock_width())
+        self.controls_clamp.set_tightening_threshold(860 if fs else self._dock_width())
         for widget in (self.controls, self.header):
             if fs:
                 widget.add_css_class("fs")
@@ -2162,6 +2165,23 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.sub2_label.set_attributes(None)
         self._style_sub2()
         self.show_osd(f"Subtitle size {param.get_int32()}")
+
+    DOCK_WIDTH = 940
+
+    def _dock_width(self):
+        return self.DOCK_WIDTH if self.app.look.lumina else 100000
+
+    def _apply_dock(self):
+        """Lumina on: centred floating dock (outside fullscreen, which has its own)."""
+        dock = self.app.look.lumina
+        if dock:
+            self.controls.add_css_class("dock")
+        else:
+            self.controls.remove_css_class("dock")
+        if not self.controls.has_css_class("fs"):
+            self.controls_clamp.set_maximum_size(self._dock_width())
+            self.controls_clamp.set_tightening_threshold(self._dock_width())
+            self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if dock else Adw.ToolbarStyle.RAISED_BORDER)
 
     def _act_look(self, action, param):
         action.set_state(param)
