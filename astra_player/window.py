@@ -543,7 +543,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         sec.append_submenu("Clock", clock)
         sec.append("Media info", "win.media-info")
         look = Gio.Menu()
-        for key, label in (("follow", "Follow Harbor Settings"), ("planner", "Lumina Glass"), ("normal", "Normal")):
+        from .look import AstraLook
+        for key, label in AstraLook.CHOICES:
             look.append_item(item(label, "win.look", GLib.Variant.new_string(key)))
         sec.append_submenu("Look", look)
         self.main_menu.append_section(None, sec)
