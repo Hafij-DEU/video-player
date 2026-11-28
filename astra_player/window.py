@@ -2120,22 +2120,8 @@ class PlayerWindow(Adw.ApplicationWindow):
 
     def _arrange_controls(self, fs):
         """Move the option buttons between the bottom bar and the header."""
-        parent = self.extras.get_parent()
-        target = self.header_extras if fs else self.start_box
-        if parent is not target:
-            if parent is not None:
-                parent.remove(self.extras)
-            if fs:
-                target.append(self.extras)
-            else:
-                target.insert_child_after(self.extras, target.get_first_child())
-        for w, menu_dir in ((self.extras, Gtk.ArrowType.DOWN if fs else Gtk.ArrowType.UP),):
-            child = w.get_first_child()
-            while child is not None:
-                if isinstance(child, Gtk.MenuButton):
-                    child.set_direction(menu_dir)
-                child = child.get_next_sibling()
-        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs else Adw.ToolbarStyle.RAISED_BORDER)
+        self._place_extras(fs or self.app.look.lumina)
+        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs or self.app.look.lumina else Adw.ToolbarStyle.RAISED_BORDER)
         self.controls_clamp.set_maximum_size(860 if fs else self._dock_width())
         self.controls_clamp.set_tightening_threshold(860 if fs else self._dock_width())
         for widget in (self.controls, self.header):
@@ -2147,6 +2133,25 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.fs_btn.set_icon_name("view-restore-symbolic" if fs else "view-fullscreen-symbolic")
         self.fs_btn.set_tooltip_text("Leave fullscreen (Esc)" if fs else "Fullscreen (Enter)")
         self._tick_clock()
+
+    def _place_extras(self, up):
+        """Option buttons up in the header (fullscreen, and the Lumina dock
+        keeps only playback controls) or down in the bottom bar."""
+        parent = self.extras.get_parent()
+        target = self.header_extras if up else self.start_box
+        if parent is not target:
+            if parent is not None:
+                parent.remove(self.extras)
+            if up:
+                target.append(self.extras)
+            else:
+                target.insert_child_after(self.extras, target.get_first_child())
+        for w, menu_dir in ((self.extras, Gtk.ArrowType.DOWN if up else Gtk.ArrowType.UP),):
+            child = w.get_first_child()
+            while child is not None:
+                if isinstance(child, Gtk.MenuButton):
+                    child.set_direction(menu_dir)
+                child = child.get_next_sibling()
 
     # -------------------------------------------------------- subtitles
 
@@ -2179,6 +2184,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         else:
             self.controls.remove_css_class("dock")
         if not self.controls.has_css_class("fs"):
+            self._place_extras(dock)
             self.controls_clamp.set_maximum_size(self._dock_width())
             self.controls_clamp.set_tightening_threshold(self._dock_width())
             self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if dock else Adw.ToolbarStyle.RAISED_BORDER)
