@@ -25,21 +25,17 @@ L_RIM = "1px solid rgba(255,255,255,0.15)"
 L_ACCENT = "linear-gradient(135deg, #6366f1, #8b5cf6)"
 
 LUMINA_CSS = f"""
-/* the shared footer rule floats bottom bars 12px in; Astra's control bar spans the window */
+/* the shared footer rule floats bottom bars 12px in; Astra's control bar spans
+   the window, on the same black as the video */
 toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
-  background-color: transparent; background-image: none; }}
+  background-color: #000000; background-image: none; }}
 .controls {{ {L_GLASS} border-top: {L_RIM}; box-shadow: {L_EDGE}; }}
-/* Lumina dock: a smaller floating glass pill, centred (width set by the window),
-   floating on the same black as the video */
-toolbarview > .bottom-bar {{ background-color: #000000; }}
+/* Lumina dock: a floating glass pill, centred (width set by the window; its
+   roomy padding and button sizes are in style.css for every look) */
 .controls.dock {{ margin: 10px 12px 14px; border-radius: 22px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 14px 30px -14px rgba(0,0,0,0.65); }}
 /* fullscreen: no black strip under the dock, the video runs to the edge */
 toolbarview.fs > .bottom-bar {{ background-color: transparent; }}
-/* windowed dock as roomy as the fullscreen panel */
-.controls.dock {{ padding: 8px 18px 12px; }}
-.controls.dock button.ctl {{ min-width: 38px; min-height: 38px; }}
-.controls.dock .transport button.play {{ min-width: 54px; min-height: 54px; }}
 .controls.fs {{ {L_GLASS} margin: 0 14px 14px; border-radius: 18px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65); }}
 .controls .time {{ color: #aaa7c8; }}
@@ -72,11 +68,7 @@ headerbar.fs {{ {L_GLASS} border-bottom: {L_RIM}; }}
 MODES = (("system", "Follow the system"), ("light", "Light"), ("dark", "Dark"))
 LOOK_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
                          "astra-player", "look")
-_rgba = planner_glass._rgba
-
-
-def _mix(hexcol, base, amount):
-    return "rgb(%d,%d,%d)" % planner_glass._mix(hexcol, base, amount)
+_rgba = planner_glass.rgba
 
 
 def colourful_css(dark, t):
@@ -88,19 +80,15 @@ def colourful_css(dark, t):
         bar = ("background-color: rgba(26,22,52,0.72); background-image: linear-gradient(to bottom, "
                "rgba(255,255,255,0.10), rgba(255,255,255,0.02) 60%); ")
         rim, edge, shadow, idle = "rgba(255,255,255,0.14)", "rgba(255,255,255,0.26)", "rgba(0,0,0,0.5)", "rgba(0,0,0,0.20)"
-        on, text, soft = (255, 255, 255), "#eeedf9", "rgba(238,237,249,0.62)"
+        text, soft = "#eeedf9", "rgba(238,237,249,0.62)"
     else:
         bar = ("background-color: rgba(255,255,255,0.62); background-image: linear-gradient(to bottom, "
                "rgba(255,255,255,0.80), rgba(255,255,255,0.40) 60%); ")
         rim, edge, shadow, idle = "rgba(255,255,255,0.90)", "rgba(255,255,255,0.95)", "rgba(76,61,180,0.22)", "rgba(255,255,255,0.12)"
-        on, text, soft = (20, 16, 40), "#1e1b3a", "rgba(30,27,58,0.62)"
+        text, soft = "#1e1b3a", "rgba(30,27,58,0.62)"
     # the dock sits on the video's black: light glass needs more white to stay light
     dock = "" if dark else ("background-color: rgba(255,255,255,0.90); background-image: linear-gradient("
                             "to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0.78) 60%);")
-    tone = 0.55 if dark else 0.80   # how much colour vs the plain text colour
-
-    def ink(c):
-        return _mix(c, on, tone)
     gloss = "linear-gradient(to bottom, rgba(255,255,255,0.30), rgba(255,255,255,0.0) 60%)"
     return f"""
 :root {{ --accent-bg-color: {c2}; --accent-color: {t["accent_text"]}; --accent-fg-color: #ffffff; }}
@@ -117,10 +105,6 @@ headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; {dock} }}
 /* fullscreen: no black strip under the dock, the video runs to the edge */
 toolbarview.fs > .bottom-bar {{ background-color: transparent; }}
-/* windowed dock as roomy as the fullscreen panel */
-.controls.dock {{ padding: 8px 18px 12px; }}
-.controls.dock button.ctl {{ min-width: 38px; min-height: 38px; }}
-.controls.dock .transport button.play {{ min-width: 54px; min-height: 54px; }}
 .controls.fs {{ {bar} margin: 0 14px 14px; border-radius: 18px; border: 1px solid {rim};
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
 .controls button.ctl, .controls.fs button.ctl {{ color: {text}; }}
@@ -161,7 +145,6 @@ headerbar.fs, headerbar.fs .header-extras button {{ color: {text}; }}
 .idle-hint {{ color: {soft}; }}
 .clock {{ color: {text}; }}
 """
-
 
 
 # ---- The other Harbor glass presets in Astra (dark player) -------------------
@@ -209,6 +192,9 @@ headerbar, headerbar.fs {{ {glass} box-shadow: inset 0 -1px rgba(255,255,255,0.0
 .controls.fs button.ctl {{ color: #ffffff; }}
 """
 
+
+# ---- Astra's own light/dark choice for Colourful -----------------------------
+
 def load_mode():
     try:
         with open(LOOK_FILE, encoding="utf-8") as fh:
@@ -216,8 +202,10 @@ def load_mode():
                 key, _, val = line.partition("=")
                 if key.strip() == "mode" and val.strip() in dict(MODES):
                     return val.strip()
-    except OSError:
+    except FileNotFoundError:
         pass
+    except (OSError, UnicodeDecodeError) as e:
+        planner_glass.log(f"cannot read {LOOK_FILE}: {e}; using the system mode")
     return "system"
 
 
@@ -226,16 +214,18 @@ def save_mode(mode):
         os.makedirs(os.path.dirname(LOOK_FILE), exist_ok=True)
         with open(LOOK_FILE, "w", encoding="utf-8") as fh:
             fh.write(f"mode={mode}\n")
-    except OSError:
-        pass
+    except OSError as e:
+        planner_glass.log(f"cannot save {LOOK_FILE}: {e}")
+
+
+# ---- Astra's look: picks Lumina / Colourful / a preset and loads its CSS -----
 
 
 class AstraLook:
-    CHOICES = (("follow", "Follow Harbor Settings"), ("planner", "Lumina Glass"), ("normal", "Normal"))
+    CHOICES = planner_glass.CHOICES
 
     def __init__(self, provider):
         self.provider = provider
-        self.listeners = []   # window callbacks (the floating control dock)
         self.mode = load_mode()
         self.style = Adw.StyleManager.get_default()
         self.style.connect("notify::dark", lambda *_: self.apply())
@@ -289,8 +279,6 @@ class AstraLook:
             css = self.look.css_gtk4(True)
             if css:
                 css += LUMINA_CSS
-            elif spec.get("effect") != "OFF" and spec.get("style") != "PLANNER":
-                css = preset_css(spec)  # the other Harbor presets
+            elif spec.get("effect") != "OFF":
+                css = preset_css(spec)  # the other Harbor presets (not PLANNER: css_gtk4 drew that)
         self.provider.load_from_string(css)
-        for cb in self.listeners:
-            cb()

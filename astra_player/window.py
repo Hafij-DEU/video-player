@@ -319,29 +319,27 @@ class PlayerWindow(Adw.ApplicationWindow):
 
         self.repeat_btn = btn("media-playlist-repeat-symbolic", "Repeat (Ctrl+L)", "win.repeat-cycle")
         self.record_btn = btn("media-record-symbolic", "Record a portion (Ctrl+R)", "win.record")
-        self.subs_btn = menu_btn("media-view-subtitles-symbolic", "Subtitles", self.subtitle_menu)
-        # Everything that moves to the header in fullscreen.
+        # The less used options live in the header (menus open downwards).
         self.extras = Gtk.Box(spacing=2)
         for w in (btn("document-open-symbolic", "Open files (Ctrl+O)", "win.open"),
                   btn("folder-videos-symbolic", "Play a folder (Ctrl+F)", "win.open-folder"),
-                  self.repeat_btn, self.record_btn, self.subs_btn,
+                  self.repeat_btn, self.record_btn,
                   menu_btn("audio-x-generic-symbolic", "Audio", self.audio_menu),
-                  menu_btn("applications-graphics-symbolic", "Video & filters", self.video_menu),
-                  btn("view-list-symbolic", "Playlist (F6)", "win.show-playlist"),
-                  btn("astra-pip-symbolic", "Picture in picture (Ctrl+P)", "win.pip")):
+                  menu_btn("applications-graphics-symbolic", "Video & filters", self.video_menu)):
+            if isinstance(w, Gtk.MenuButton):
+                w.set_direction(Gtk.ArrowType.DOWN)
             self.extras.append(w)
 
         self.info_label = Gtk.Label(css_classes=["badge-info"], ellipsize=3, max_width_chars=28)
         self.start_box = Gtk.Box(spacing=2)
         self.start_box.append(btn("media-playback-stop-symbolic", "Stop (F4)", "win.stop"))
-        # The most used options stay on the bar while the rest move up into the
-        # header (Lumina dock, fullscreen): subtitles, speed, playlist, PiP.
+        # The most used options stay on the dock: subtitles, speed, playlist, PiP.
         self.speed_btn = Gtk.MenuButton(tooltip_text="Speed (C / X / Z)", menu_model=self.speed_menu,
                                         direction=Gtk.ArrowType.UP, always_show_arrow=False,
                                         css_classes=["flat", "ctl", "speed-chip"], focus_on_click=False)
         self.speed_label = Gtk.Label(label="1×", css_classes=["numeric"])
         self.speed_btn.set_child(self.speed_label)
-        self.quick = Gtk.Box(spacing=2, css_classes=["quick"], visible=False)
+        self.quick = Gtk.Box(spacing=2, css_classes=["quick"])
         self.quick.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["quick-sep"],
                                         margin_start=4, margin_end=4, margin_top=8, margin_bottom=8))
         for w in (menu_btn("media-view-subtitles-symbolic", "Subtitles", self.subtitle_menu),
@@ -349,11 +347,7 @@ class PlayerWindow(Adw.ApplicationWindow):
                   btn("view-list-symbolic", "Playlist (F6)", "win.show-playlist"),
                   btn("astra-pip-symbolic", "Picture in picture (Ctrl+P)", "win.pip")):
             self.quick.append(w)
-        # their copies in the header row, hidden while the quick row shows
-        self._quick_twins = (self.subs_btn, self.extras.get_last_child().get_prev_sibling(),
-                             self.extras.get_last_child())
         self.start_box.append(self.quick)
-        self.start_box.append(self.extras)
         self.start_box.append(self.info_label)
 
         self.mute_btn = btn("audio-volume-high-symbolic", "Mute (M)", "win.mute")
@@ -375,11 +369,16 @@ class PlayerWindow(Adw.ApplicationWindow):
         controls.append(seek_row)
         controls.append(row)
         self.controls = controls
-        self.controls_clamp = Adw.Clamp(child=controls, maximum_size=100000, tightening_threshold=100000)
+        # Every look (Lumina, the other glass presets, normal) uses a centred
+        # floating dock; fullscreen widens it (_arrange_controls).
+        controls.add_css_class("dock")
+        self.controls_clamp = Adw.Clamp(child=controls, maximum_size=self.DOCK_WIDTH,
+                                        tightening_threshold=self.DOCK_WIDTH)
 
         self.header = header
         self.header_extras = Gtk.Box(spacing=2, css_classes=["header-extras"])
         header.pack_end(self.header_extras)
+        self.header_extras.append(self.extras)
 
         self.clock = Gtk.Label(css_classes=["clock", "numeric"], halign=Gtk.Align.END,
                                valign=Gtk.Align.START, margin_end=22, margin_top=64,
@@ -398,11 +397,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.view = Adw.ToolbarView(content=self.toasts)
         self.view.add_top_bar(header)
         self.view.add_bottom_bar(self.controls_clamp)
-        self.view.set_bottom_bar_style(Adw.ToolbarStyle.RAISED_BORDER)
+        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT)
         self._mark_stage()
-        # Lumina: the control bar becomes a smaller, centred floating glass dock
-        self.app.look.listeners.append(self._apply_dock)
-        self._apply_dock()
         self.set_content(self.view)
         self._update_volume_ui()
         self._refresh_playlist()
@@ -2142,11 +2138,10 @@ class PlayerWindow(Adw.ApplicationWindow):
             self._hide_timeout = GLib.timeout_add(2500, self._autohide)
 
     def _arrange_controls(self, fs):
-        """Move the option buttons between the bottom bar and the header."""
-        self._place_extras(fs or self.DOCKED)
-        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs or self.DOCKED else Adw.ToolbarStyle.RAISED_BORDER)
-        self.controls_clamp.set_maximum_size(860 if fs else self._dock_width())
-        self.controls_clamp.set_tightening_threshold(860 if fs else self._dock_width())
+        """Fullscreen or windowed: dock width, fs classes, clock, button."""
+        width = 860 if fs else self.DOCK_WIDTH
+        self.controls_clamp.set_maximum_size(width)
+        self.controls_clamp.set_tightening_threshold(width)
         for widget in (self.controls, self.header, self.view):
             if fs:
                 widget.add_css_class("fs")
@@ -2156,28 +2151,6 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.fs_btn.set_icon_name("view-restore-symbolic" if fs else "view-fullscreen-symbolic")
         self.fs_btn.set_tooltip_text("Leave fullscreen (Esc)" if fs else "Fullscreen (Enter)")
         self._tick_clock()
-
-    def _place_extras(self, up):
-        """Option buttons up in the header (fullscreen, and the Lumina dock
-        keeps only playback controls) or down in the bottom bar."""
-        parent = self.extras.get_parent()
-        target = self.header_extras if up else self.start_box
-        if parent is not target:
-            if parent is not None:
-                parent.remove(self.extras)
-            if up:
-                target.append(self.extras)
-            else:
-                target.insert_child_after(self.extras, target.get_first_child())
-        self.quick.set_visible(up)
-        for w in self._quick_twins:
-            w.set_visible(not up)
-        for w, menu_dir in ((self.extras, Gtk.ArrowType.DOWN if up else Gtk.ArrowType.UP),):
-            child = w.get_first_child()
-            while child is not None:
-                if isinstance(child, Gtk.MenuButton):
-                    child.set_direction(menu_dir)
-                child = child.get_next_sibling()
 
     # -------------------------------------------------------- subtitles
 
@@ -2207,24 +2180,6 @@ class PlayerWindow(Adw.ApplicationWindow):
             view.remove_css_class("stage-video")
 
     DOCK_WIDTH = 940
-    # Every look (Lumina, the other glass presets, normal) uses the floating dock.
-    DOCKED = True
-
-    def _dock_width(self):
-        return self.DOCK_WIDTH if self.DOCKED else 100000
-
-    def _apply_dock(self):
-        """Centred floating dock (outside fullscreen, which has its own)."""
-        dock = self.DOCKED
-        if dock:
-            self.controls.add_css_class("dock")
-        else:
-            self.controls.remove_css_class("dock")
-        if not self.controls.has_css_class("fs"):
-            self._place_extras(dock)
-            self.controls_clamp.set_maximum_size(self._dock_width())
-            self.controls_clamp.set_tightening_threshold(self._dock_width())
-            self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if dock else Adw.ToolbarStyle.RAISED_BORDER)
 
     def _act_look(self, action, param):
         action.set_state(param)
