@@ -332,6 +332,25 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.info_label = Gtk.Label(css_classes=["badge-info"], ellipsize=3, max_width_chars=28)
         self.start_box = Gtk.Box(spacing=2)
         self.start_box.append(btn("media-playback-stop-symbolic", "Stop (F4)", "win.stop"))
+        # The most used options stay on the bar while the rest move up into the
+        # header (Lumina dock, fullscreen): subtitles, speed, playlist, PiP.
+        self.speed_btn = Gtk.MenuButton(tooltip_text="Speed (C / X / Z)", menu_model=self.speed_menu,
+                                        direction=Gtk.ArrowType.UP, always_show_arrow=False,
+                                        css_classes=["flat", "ctl", "speed-chip"], focus_on_click=False)
+        self.speed_label = Gtk.Label(label="1×", css_classes=["numeric"])
+        self.speed_btn.set_child(self.speed_label)
+        self.quick = Gtk.Box(spacing=2, css_classes=["quick"], visible=False)
+        self.quick.append(Gtk.Separator(orientation=Gtk.Orientation.VERTICAL, css_classes=["quick-sep"],
+                                        margin_start=4, margin_end=4, margin_top=8, margin_bottom=8))
+        for w in (menu_btn("media-view-subtitles-symbolic", "Subtitles", self.subtitle_menu),
+                  self.speed_btn,
+                  btn("view-list-symbolic", "Playlist (F6)", "win.show-playlist"),
+                  btn("astra-pip-symbolic", "Picture in picture (Ctrl+P)", "win.pip")):
+            self.quick.append(w)
+        # their copies in the header row, hidden while the quick row shows
+        self._quick_twins = (self.subs_btn, self.extras.get_last_child().get_prev_sibling(),
+                             self.extras.get_last_child())
+        self.start_box.append(self.quick)
         self.start_box.append(self.extras)
         self.start_box.append(self.info_label)
 
@@ -403,7 +422,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.open_menu.append("Saved playlists…", "win.library")
         self.open_menu.append_submenu("Recent", self.recent_menu)
 
-        speed = Gio.Menu()
+        speed = self.speed_menu = Gio.Menu()
         for s in SPEEDS:
             speed.append_item(item(f"{s:g}×", "win.speed", GLib.Variant.new_double(s)))
         loop = Gio.Menu()
@@ -1451,6 +1470,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         rate = round(max(0.1, min(rate, 8.0)), 2)
         rate = self.engine.set_rate(rate)
         self.lookup_action("speed").set_state(GLib.Variant.new_double(rate))
+        self.speed_label.set_label(f"{rate:g}×")
         self.show_osd(f"Speed {rate:g}×")
         self._update_info()
 
@@ -2146,6 +2166,9 @@ class PlayerWindow(Adw.ApplicationWindow):
                 target.append(self.extras)
             else:
                 target.insert_child_after(self.extras, target.get_first_child())
+        self.quick.set_visible(up)
+        for w in self._quick_twins:
+            w.set_visible(not up)
         for w, menu_dir in ((self.extras, Gtk.ArrowType.DOWN if up else Gtk.ArrowType.UP),):
             child = w.get_first_child()
             while child is not None:

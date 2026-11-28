@@ -32,7 +32,7 @@ toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shad
 /* Lumina dock: a smaller floating glass pill, centred (width set by the window),
    floating on the same black as the video */
 toolbarview > .bottom-bar {{ background-color: #000000; }}
-.controls.dock {{ margin: 0 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: {L_RIM};
+.controls.dock {{ margin: 10px 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 14px 30px -14px rgba(0,0,0,0.65); }}
 .controls.fs {{ {L_GLASS} margin: 0 14px 14px; border-radius: 18px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65); }}
@@ -88,6 +88,9 @@ def colourful_css(dark, t):
                "rgba(255,255,255,0.80), rgba(255,255,255,0.40) 60%); ")
         rim, edge, shadow, idle = "rgba(255,255,255,0.90)", "rgba(255,255,255,0.95)", "rgba(76,61,180,0.22)", "rgba(255,255,255,0.12)"
         on, text, soft = (20, 16, 40), "#1e1b3a", "rgba(30,27,58,0.62)"
+    # the dock sits on the video's black: light glass needs more white to stay light
+    dock = "" if dark else ("background-color: rgba(255,255,255,0.90); background-image: linear-gradient("
+                            "to bottom, rgba(255,255,255,0.95), rgba(255,255,255,0.78) 60%);")
     tone = 0.55 if dark else 0.80   # how much colour vs the plain text colour
 
     def ink(c):
@@ -96,13 +99,14 @@ def colourful_css(dark, t):
     return f"""
 :root {{ --accent-bg-color: {c2}; --accent-color: {t["accent_text"]}; --accent-fg-color: #ffffff; }}
 .video-area {{ background-color: {idle}; }}
+/* the dock floats on the same black as the video, not on the light window */
 toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
-  background-color: transparent; background-image: none; }}
+  background-color: #000000; background-image: none; }}
 headerbar {{ {bar} box-shadow: inset 0 -1px {rim}; }}
 headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls {{ {bar} border-top: 1px solid {rim}; box-shadow: inset 0 1px {edge}; }}
-.controls.dock {{ margin: 0 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: 1px solid {rim};
-  box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
+.controls.dock {{ margin: 10px 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: 1px solid {rim};
+  box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; {dock} }}
 .controls.fs {{ {bar} margin: 0 14px 14px; border-radius: 18px; border: 1px solid {rim};
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
 .controls button.ctl, .controls.fs button.ctl {{ color: {text}; }}
@@ -121,6 +125,9 @@ headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls button.active-toggle {{ color: {t["i2"]}; background-color: {_rgba(c2, 0.11)}; background-image: {gloss};
   box-shadow: inset 0 0 0 1px {_rgba(c2, 0.20)}; border-radius: 10px; }}
 .badge-info {{ color: {t["i2"]}; }}
+.controls button.speed-chip {{ color: {t["i2"]}; font-weight: 700; font-size: 0.86em; min-width: 34px;
+  background-color: {_rgba(c2, 0.10)}; border-radius: 10px; }}
+.controls .quick-sep {{ background-color: {_rgba(c2, 0.22)}; min-width: 1px; }}
 scale.seekbar trough, .controls.fs scale.seekbar trough {{ background-color: {_rgba(c2, 0.16)}; }}
 scale.seekbar highlight, scale trough highlight {{ background-color: {c2};
   background-image: linear-gradient(to right, {c1}, {c2}, {c3}); }}
