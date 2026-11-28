@@ -1,13 +1,18 @@
 """Astra's glass looks (always dark: Astra is a dark player).
 
-Look in the main menu: Follow Harbor Settings / Lumina Glass / Lumina Aurora /
-Normal. Lumina Glass is the calm indigo look every app shares (Harbor
-Settings, ~/.config/harbor/glass-astra). Lumina Aurora is Astra's own
-colourful variant (pink, violet, sky) on top of it; Astra keeps that pick in
-~/.config/astra-player/look. Spec: ~/Music/apps/glass-theme/PLANNER-SPEC.md
+Look (main menu or Preferences > Look): Follow Harbor Settings / Lumina Glass /
+Normal. Lumina and its options come from the shared glass files, global or per
+app (~/.config/harbor/glass-astra), set in Harbor Settings or here:
+  lumina=CALM      the indigo look every app shares (Astra keeps it dark)
+  lumina=COLOURFUL the whole window in colour: a colour set, the system accent
+                   or a picked colour, with an intensity
+Astra's own extra: light or dark for Colourful (~/.config/astra-player/look).
+Spec: ~/Music/apps/glass-theme/PLANNER-SPEC.md
 """
 
 import os
+
+from gi.repository import Adw
 
 from . import planner_glass
 
@@ -20,6 +25,9 @@ L_RIM = "1px solid rgba(255,255,255,0.15)"
 L_ACCENT = "linear-gradient(135deg, #6366f1, #8b5cf6)"
 
 LUMINA_CSS = f"""
+/* the shared footer rule floats bottom bars 12px in; Astra's control bar spans the window */
+toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
+  background-color: transparent; background-image: none; }}
 .controls {{ {L_GLASS} border-top: {L_RIM}; box-shadow: {L_EDGE}; }}
 .controls.fs {{ {L_GLASS} margin: 0 14px 14px; border-radius: 18px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65); }}
@@ -48,111 +56,163 @@ headerbar.fs {{ {L_GLASS} border-bottom: {L_RIM}; }}
 .clock {{ color: #eeedf9; }}
 """
 
-# ---- Lumina Aurora: Astra's colourful variant ------------------------------
-# Real glass: a translucent violet fill, a strong white sheen fading down, a pink
-# glow at the foot, a white rim and a bright top edge (aurora colours).
-GLASS = ("background-color: rgba(44,30,82,0.52); "
-         "background-image: linear-gradient(to bottom, rgba(255,255,255,0.20), rgba(255,255,255,0.05) 45%, "
-         "rgba(255,255,255,0.0) 70%, rgba(236,72,153,0.10)); ")
-EDGE = "inset 0 1px rgba(255,255,255,0.34), inset 0 -1px rgba(255,255,255,0.06)"
-RIM = "1px solid rgba(255,255,255,0.18)"
-AURORA = "linear-gradient(135deg, #ec4899, #8b5cf6 55%, #38bdf8)"
-AURORA_H = "linear-gradient(to right, #ec4899, #8b5cf6, #38bdf8)"
+# ---- Lumina Colourful in Astra: the whole window in colour -------------------
 
-AURORA_CSS = f"""
-window.background {{ background-image: linear-gradient(150deg, rgb(48,20,60), rgb(30,24,74) 50%, rgb(14,34,70)); }}
-.controls {{ {GLASS} border-top: {RIM}; box-shadow: {EDGE}, 0 -10px 30px -18px rgba(236,72,153,0.45); }}
-.controls.fs {{ {GLASS} margin: 0 14px 14px; border-radius: 18px; border: {RIM};
-  box-shadow: {EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65), 0 0 24px -8px rgba(139,92,246,0.45); }}
-.controls .time {{ color: #c4b5fd; }}
-.controls button.play, .badge-info, .controls button.active-toggle {{ color: #f0abfc; }}
-.controls .transport > button:nth-child(3n+1) {{ color: #f9a8d4; }}
-.controls .transport > button:nth-child(3n+2) {{ color: #c4b5fd; }}
-.controls .transport > button:nth-child(3n) {{ color: #7dd3fc; }}
-.controls .transport button:hover {{ background-color: rgba(255,255,255,0.10); }}
+MODES = (("system", "Follow the system"), ("light", "Light"), ("dark", "Dark"))
+LOOK_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                         "astra-player", "look")
+_rgba = planner_glass._rgba
+
+
+def _mix(hexcol, base, amount):
+    return "rgb(%d,%d,%d)" % planner_glass._mix(hexcol, base, amount)
+
+
+def colourful_css(dark, t):
+    """Astra's parts in COLOURFUL: plain glass bars (no tint stripes, no
+    coloured glows); the colour is in the text, icons and selections. t =
+    planner_glass.tokens(..., spec) so Astra matches the other apps."""
+    c1, c2, c3 = t["a1"], t["a2"], t["a3"]
+    if dark:
+        bar = ("background-color: rgba(26,22,52,0.72); background-image: linear-gradient(to bottom, "
+               "rgba(255,255,255,0.10), rgba(255,255,255,0.02) 60%); ")
+        rim, edge, shadow, idle = "rgba(255,255,255,0.14)", "rgba(255,255,255,0.26)", "rgba(0,0,0,0.5)", "rgba(0,0,0,0.20)"
+        on, text, soft = (255, 255, 255), "#eeedf9", "rgba(238,237,249,0.62)"
+    else:
+        bar = ("background-color: rgba(255,255,255,0.62); background-image: linear-gradient(to bottom, "
+               "rgba(255,255,255,0.80), rgba(255,255,255,0.40) 60%); ")
+        rim, edge, shadow, idle = "rgba(255,255,255,0.90)", "rgba(255,255,255,0.95)", "rgba(76,61,180,0.22)", "rgba(255,255,255,0.12)"
+        on, text, soft = (20, 16, 40), "#1e1b3a", "rgba(30,27,58,0.62)"
+    tone = 0.55 if dark else 0.80   # how much colour vs the plain text colour
+
+    def ink(c):
+        return _mix(c, on, tone)
+    gloss = "linear-gradient(to bottom, rgba(255,255,255,0.30), rgba(255,255,255,0.0) 60%)"
+    return f"""
+:root {{ --accent-bg-color: {c2}; --accent-color: {t["accent_text"]}; --accent-fg-color: #ffffff; }}
+.video-area {{ background-color: {idle}; }}
+toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
+  background-color: transparent; background-image: none; }}
+headerbar {{ {bar} box-shadow: inset 0 -1px {rim}; }}
+headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
+.controls {{ {bar} border-top: 1px solid {rim}; box-shadow: inset 0 1px {edge}; }}
+.controls.fs {{ {bar} margin: 0 14px 14px; border-radius: 18px; border: 1px solid {rim};
+  box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
+.controls button.ctl, .controls.fs button.ctl {{ color: {text}; }}
+/* icons in three colours, like Astra Android's tabs; text stays neutral */
+.controls button.ctl:nth-child(3n+1), .controls .transport > button:nth-child(3n+1) {{ color: {t["i1"]}; }}
+.controls button.ctl:nth-child(3n+2), .controls .transport > button:nth-child(3n+2) {{ color: {t["i2"]}; }}
+.controls button.ctl:nth-child(3n), .controls .transport > button:nth-child(3n) {{ color: {t["i3"]}; }}
+.controls .time {{ color: {soft}; }}
+.controls .transport button:hover, .controls button.ctl:hover {{ background-color: {_rgba(c2, 0.14)}; }}
 .controls .transport button.play, .controls.fs .transport button.ctl.play {{
-  background-image: {AURORA}; color: #ffffff; border-radius: 9999px;
-  border: 1px solid rgba(255,255,255,0.35);
-  box-shadow: inset 0 1px rgba(255,255,255,0.45), 0 8px 22px -6px rgba(236,72,153,0.60), 0 0 18px -4px rgba(56,189,248,0.40); }}
-.controls .transport button.play:hover {{ opacity: 0.92; }}
-scale.seekbar trough {{ background-color: rgba(255,255,255,0.12); }}
-scale.seekbar highlight, scale trough highlight {{ background-color: #8b5cf6; background-image: {AURORA_H}; }}
-scale.seekbar slider {{ background-color: #ffffff; box-shadow: 0 0 0 3px rgba(236,72,153,0.40), 0 0 12px rgba(139,92,246,0.6); }}
-scale.seekbar marks indicator {{ color: #f0abfc; }}
-.playlist-panel {{ {GLASS} border-left: {RIM}; box-shadow: {EDGE}; }}
+  background-color: {c2}; color: #ffffff; border-radius: 9999px;
+  background-image: {gloss}, {t["accent"]};
+  border: 1px solid rgba(255,255,255,0.40); box-shadow: inset 0 1px rgba(255,255,255,0.50), 0 4px 10px -6px {shadow}; }}
+.controls .transport button.play:hover {{ opacity: 0.92; background-color: {c2}; }}
+.controls .transport > button.play, .controls.fs .transport > button.ctl.play {{ color: #ffffff; }}
+/* switched-on tools sit on a small glossy colour chip */
+.controls button.active-toggle {{ color: {t["i1"]}; background-color: {_rgba(c1, 0.11)}; background-image: {gloss};
+  box-shadow: inset 0 0 0 1px {_rgba(c1, 0.20)}; border-radius: 10px; }}
+.badge-info {{ color: {ink(c1)}; }}
+scale.seekbar trough, .controls.fs scale.seekbar trough {{ background-color: {_rgba(c2, 0.16)}; }}
+scale.seekbar highlight, scale trough highlight {{ background-color: {c2};
+  background-image: linear-gradient(to right, {c1}, {c2}, {c3}); }}
+scale.seekbar slider {{ background-color: #ffffff; box-shadow: 0 0 0 2px {c2}; }}
+scale.seekbar marks indicator {{ color: {ink(c1)}; }}
+.playlist-panel {{ {bar} border-left: 1px solid {rim}; }}
 .playlist row {{ border-radius: 12px; margin: 1px 6px; }}
-.playlist row:hover {{ background-color: rgba(255,255,255,0.07); }}
-.playlist row.current {{ background-image: linear-gradient(to right, rgba(236,72,153,0.30), rgba(139,92,246,0.24), rgba(56,189,248,0.18));
-  color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }}
-.osd {{ {GLASS} border: {RIM}; border-radius: 14px;
-  box-shadow: {EDGE}, 0 10px 26px -10px rgba(0,0,0,0.6); text-shadow: none; }}
-.seek-preview {{ border-radius: 12px; border: {RIM}; box-shadow: 0 10px 24px -10px rgba(0,0,0,0.6); }}
-headerbar.fs {{ {GLASS} border-bottom: {RIM}; }}
-.idle-logo {{ color: #f0abfc; }}
-.idle-title {{ color: #ffffff; }}
-.clock {{ color: #fdf4ff; }}
-/* the colourful part: an aurora tint across the header and the control bar */
-headerbar, .controls, .controls.fs {{ background-color: rgba(40,22,78,0.70);
-  background-image: linear-gradient(to bottom, rgba(255,255,255,0.18), rgba(255,255,255,0.0) 60%),
-    linear-gradient(to right, rgba(236,72,153,0.42), rgba(139,92,246,0.36) 50%, rgba(56,189,248,0.36)); }}
-headerbar {{ box-shadow: inset 0 -1px rgba(255,255,255,0.12), 0 6px 18px -10px rgba(236,72,153,0.55); }}
-headerbar .title, headerbar label.title {{ color: #ffffff; }}
-headerbar button {{ color: #fbcfe8; }}
-.controls button:nth-child(3n+1) {{ color: #f9a8d4; }}
-.controls button:nth-child(3n+2) {{ color: #c4b5fd; }}
-.controls button:nth-child(3n) {{ color: #7dd3fc; }}
-.controls button.play, .controls .transport button.play {{ color: #ffffff; }}
-.controls .time {{ color: #fbcfe8; }}
-.playlist-panel {{ background-image: linear-gradient(to bottom, rgba(236,72,153,0.20), rgba(139,92,246,0.16) 50%, rgba(56,189,248,0.16)); }}
-.idle-title {{ color: #fbcfe8; }}
+.playlist row:hover {{ background-color: {_rgba(c2, 0.10)}; }}
+.playlist row.current {{ background-color: {t["sel"]}; color: {t["title"]}; }}
+.osd {{ {bar} color: {text}; border: 1px solid {rim}; border-radius: 14px;
+  box-shadow: inset 0 1px {edge}, 0 10px 24px -12px {shadow}; text-shadow: none; }}
+.seek-preview {{ border-radius: 12px; border: 1px solid {rim}; box-shadow: 0 10px 24px -12px {shadow}; }}
+headerbar.fs {{ {bar} border-bottom: 1px solid {rim}; }}
+headerbar.fs, headerbar.fs .header-extras button {{ color: {text}; }}
+.idle-logo {{ opacity: 1; }}
+.idle-title {{ color: {t["title"]}; }}
+.idle-hint {{ color: {soft}; }}
+.clock {{ color: {text}; }}
 """
 
 
-LOOK_FILE = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
-                         "astra-player", "look")
-
-
-def _aurora_saved():
+def load_mode():
     try:
         with open(LOOK_FILE, encoding="utf-8") as fh:
-            return fh.read().strip() == "aurora"
+            for line in fh.read().splitlines():
+                key, _, val = line.partition("=")
+                if key.strip() == "mode" and val.strip() in dict(MODES):
+                    return val.strip()
     except OSError:
-        return False
+        pass
+    return "system"
 
 
-def _save_aurora(on):
+def save_mode(mode):
     try:
-        if on:
-            os.makedirs(os.path.dirname(LOOK_FILE), exist_ok=True)
-            with open(LOOK_FILE, "w", encoding="utf-8") as fh:
-                fh.write("aurora\n")
-        elif os.path.exists(LOOK_FILE):
-            os.remove(LOOK_FILE)
+        os.makedirs(os.path.dirname(LOOK_FILE), exist_ok=True)
+        with open(LOOK_FILE, "w", encoding="utf-8") as fh:
+            fh.write(f"mode={mode}\n")
     except OSError:
         pass
 
 
 class AstraLook:
-    CHOICES = (("follow", "Follow Harbor Settings"), ("planner", "Lumina Glass"),
-               ("aurora", "Lumina Aurora (colourful)"), ("normal", "Normal"))
+    CHOICES = (("follow", "Follow Harbor Settings"), ("planner", "Lumina Glass"), ("normal", "Normal"))
 
     def __init__(self, provider):
         self.provider = provider
-        self.aurora = _aurora_saved()
+        self.mode = load_mode()
+        self.style = Adw.StyleManager.get_default()
+        self.style.connect("notify::dark", lambda *_: self.apply())
         self.look = planner_glass.Look("astra", self.apply)
         self.apply()
 
+    @property
+    def spec(self):
+        return self.look.spec
+
+    @property
+    def lumina(self):
+        return self.look.active
+
+    @property
+    def colourful(self):
+        return self.lumina and self.spec.get("lumina") == "COLOURFUL"
+
     def choice(self):
-        base = self.look.choice()
-        return "aurora" if base == "planner" and self.aurora else base
+        return self.look.choice()
 
     def set_choice(self, choice):
-        self.aurora = choice == "aurora"
-        _save_aurora(self.aurora)
-        self.look.set_choice("planner" if self.aurora else choice)
+        self.look.set_choice(choice)  # restyles through Look's callback
+
+    def tweak(self, key, value):
+        """Preferences > Look: shared Lumina keys go to glass-astra (per app,
+        same as Harbor Settings); "mode" is Astra's own."""
+        if key == "mode":
+            self.mode = value
+            save_mode(value)
+            self.apply()
+        else:
+            self.look.set_own(key, value)
+
+    def _scheme(self):
+        if not self.colourful:
+            return Adw.ColorScheme.FORCE_DARK  # Astra is a dark player
+        return {"light": Adw.ColorScheme.FORCE_LIGHT,
+                "dark": Adw.ColorScheme.FORCE_DARK}.get(self.mode, Adw.ColorScheme.DEFAULT)
 
     def apply(self):
-        css = self.look.css_gtk4(True)
-        if css:
-            css += AURORA_CSS if self.aurora else LUMINA_CSS
+        scheme = self._scheme()
+        if self.style.get_color_scheme() != scheme:
+            self.style.set_color_scheme(scheme)  # notify::dark calls apply again
+        spec = self.spec
+        if self.colourful:
+            dark = self.style.get_dark()
+            css = planner_glass.css_gtk4(dark, False, 100, spec) + colourful_css(
+                dark, planner_glass.tokens(dark, False, 100, spec))
+        else:
+            css = self.look.css_gtk4(True)
+            if css:
+                css += LUMINA_CSS
         self.provider.load_from_string(css)

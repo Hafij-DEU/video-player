@@ -2,7 +2,7 @@
 
 import threading
 
-from gi.repository import Adw, Gio, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 from . import whisper, youtube
 from .engine import EQ_FREQS, EQ_PRESETS
@@ -384,8 +384,95 @@ class PreferencesDialog:
         page.add(shots)
 
         dlg.add(page)
+        dlg.add(self._look_page())
         self.dialog = dlg
         dlg.connect("closed", lambda _d: s.save())
+
+    def _look_page(self):
+        """Look: the window theme. The Lumina rows (style, colours, the system
+        accent or a picked colour, intensity) are the shared per-app glass keys
+        Harbor Settings edits too; they show only while Lumina is on."""
+        from . import planner_glass as pg
+        from .look import MODES, AstraLook
+        look = self.win.app.look
+        page = Adw.PreferencesPage(title="Look", icon_name="applications-graphics-symbolic")
+        group = Adw.PreferencesGroup(title="Theme")
+        keys = [k for k, _ in AstraLook.CHOICES]
+        theme = Adw.ComboRow(title="Look", model=Gtk.StringList.new([v for _, v in AstraLook.CHOICES]))
+        theme.set_selected(keys.index(look.choice()) if look.choice() in keys else 0)
+        group.add(theme)
+        page.add(group)
+
+        lum = Adw.PreferencesGroup(title="Lumina", description="Only while Lumina Glass is on. "
+                                   "Harbor Settings can set the same globally or for Astra.")
+        spec = look.spec
+        style_keys = ["CALM", "COLOURFUL"]
+        style = Adw.ComboRow(title="Style", model=Gtk.StringList.new(["Calm glass", "Colourful"]))
+        style.set_selected(style_keys.index(spec.get("lumina", "CALM")))
+        lum.add(style)
+        names = {"AURORA": "Aurora (pink, violet, sky)", "SUNSET": "Sunset (orange, pink, violet)",
+                 "OCEAN": "Ocean (cyan, blue, indigo)", "CANDY": "Candy (pink, lilac, mint)",
+                 "FOREST": "Forest (green, teal, sky)", "ACCENT": "System accent colour",
+                 "CUSTOM": "Custom colour"}
+        col_keys = list(pg.LUMINA_COLOURS)
+        colours = Adw.ComboRow(title="Colours", model=Gtk.StringList.new([names[k] for k in col_keys]))
+        colours.set_selected(col_keys.index(spec.get("lumina-colours", "AURORA")))
+        lum.add(colours)
+        custom = Adw.ActionRow(title="Custom colour", subtitle="The colours sweep around this one")
+        rgba = Gdk.RGBA()
+        rgba.parse(spec.get("lumina-colour", "#8b5cf6"))
+        pick = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), rgba=rgba,
+                                     valign=Gtk.Align.CENTER)
+        custom.add_suffix(pick)
+        lum.add(custom)
+        strength = Adw.ActionRow(title="Colour intensity")
+        scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 20, 100, 5)
+        scale.set_hexpand(True)
+        scale.set_size_request(180, -1)
+        scale.set_draw_value(False)
+        scale.set_value(spec.get("lumina-intensity", 70))
+        strength.add_suffix(scale)
+        lum.add(strength)
+        mode_keys = [k for k, _ in MODES]
+        mode = Adw.ComboRow(title="Light or dark", subtitle="Calm glass keeps Astra dark",
+                            model=Gtk.StringList.new([v for _, v in MODES]))
+        mode.set_selected(mode_keys.index(look.mode))
+        lum.add(mode)
+        page.add(lum)
+
+        def sync():
+            lum.set_visible(look.lumina)
+            colourful = look.spec.get("lumina") == "COLOURFUL"
+            for row in (colours, strength, mode):
+                row.set_visible(colourful)
+            custom.set_visible(colourful and look.spec.get("lumina-colours") == "CUSTOM")
+
+        def on_theme(row, _p):
+            key = keys[row.get_selected()]
+            act = self.win.lookup_action("look")
+            if act is not None:
+                act.activate(GLib.Variant.new_string(key))  # menu radio + look in one place
+            else:
+                look.set_choice(key)
+            sync()
+
+        def tweak(key, value):
+            look.tweak(key, value)
+            sync()
+
+        def on_pick(btn, _p):
+            c = btn.get_rgba()
+            tweak("lumina-colour", "#%02x%02x%02x" % (round(c.red * 255), round(c.green * 255),
+                                                       round(c.blue * 255)))
+
+        theme.connect("notify::selected", on_theme)
+        style.connect("notify::selected", lambda r, _p: tweak("lumina", style_keys[r.get_selected()]))
+        colours.connect("notify::selected", lambda r, _p: tweak("lumina-colours", col_keys[r.get_selected()]))
+        pick.connect("notify::rgba", on_pick)
+        scale.connect("value-changed", lambda sc: tweak("lumina-intensity", int(sc.get_value())))
+        mode.connect("notify::selected", lambda r, _p: tweak("mode", mode_keys[r.get_selected()]))
+        sync()
+        return page
 
     def _whisper_group(self):
         s = self.win.settings
