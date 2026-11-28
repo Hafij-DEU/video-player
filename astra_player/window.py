@@ -229,6 +229,8 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.stack.add_named(idle, "idle")
         self.stack.add_named(self.video_holder, "video")
         self.stack.add_named(audio, "audio")
+        # The strip behind the dock is black only under a video (see look.py).
+        self.stack.connect("notify::visible-child-name", lambda st, _p: self._mark_stage())
 
         self.overlay = Gtk.Overlay(css_classes=["video-area"], hexpand=True, vexpand=True)
         self.overlay.set_child(self.stack)
@@ -397,6 +399,7 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.view.add_top_bar(header)
         self.view.add_bottom_bar(self.controls_clamp)
         self.view.set_bottom_bar_style(Adw.ToolbarStyle.RAISED_BORDER)
+        self._mark_stage()
         # Lumina: the control bar becomes a smaller, centred floating glass dock
         self.app.look.listeners.append(self._apply_dock)
         self._apply_dock()
@@ -2193,6 +2196,15 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.sub2_label.set_attributes(None)
         self._style_sub2()
         self.show_osd(f"Subtitle size {param.get_int32()}")
+
+    def _mark_stage(self):
+        view = getattr(self, "view", None)
+        if view is None:
+            return
+        if self.stack.get_visible_child_name() == "video":
+            view.add_css_class("stage-video")
+        else:
+            view.remove_css_class("stage-video")
 
     DOCK_WIDTH = 940
     # Every look (Lumina, the other glass presets, normal) uses the floating dock.

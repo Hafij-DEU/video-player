@@ -105,9 +105,11 @@ def colourful_css(dark, t):
     return f"""
 :root {{ --accent-bg-color: {c2}; --accent-color: {t["accent_text"]}; --accent-fg-color: #ffffff; }}
 .video-area {{ background-color: {idle}; }}
-/* the dock floats on the same black as the video, not on the light window */
+/* the dock floats on the video's black; with no video (idle screen, music)
+   it sits on the same light stage as the idle screen */
 toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shadow: none;
-  background-color: #000000; background-image: none; }}
+  background-color: {idle}; background-image: none; }}
+toolbarview.stage-video > .bottom-bar {{ background-color: #000000; }}
 headerbar {{ {bar} box-shadow: inset 0 -1px {rim}; }}
 headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls {{ {bar} border-top: 1px solid {rim}; box-shadow: inset 0 1px {edge}; }}
