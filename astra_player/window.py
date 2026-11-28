@@ -2140,11 +2140,11 @@ class PlayerWindow(Adw.ApplicationWindow):
 
     def _arrange_controls(self, fs):
         """Move the option buttons between the bottom bar and the header."""
-        self._place_extras(fs or self.app.look.lumina)
-        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs or self.app.look.lumina else Adw.ToolbarStyle.RAISED_BORDER)
+        self._place_extras(fs or self.DOCKED)
+        self.view.set_bottom_bar_style(Adw.ToolbarStyle.FLAT if fs or self.DOCKED else Adw.ToolbarStyle.RAISED_BORDER)
         self.controls_clamp.set_maximum_size(860 if fs else self._dock_width())
         self.controls_clamp.set_tightening_threshold(860 if fs else self._dock_width())
-        for widget in (self.controls, self.header):
+        for widget in (self.controls, self.header, self.view):
             if fs:
                 widget.add_css_class("fs")
             else:
@@ -2195,13 +2195,15 @@ class PlayerWindow(Adw.ApplicationWindow):
         self.show_osd(f"Subtitle size {param.get_int32()}")
 
     DOCK_WIDTH = 940
+    # Every look (Lumina, the other glass presets, normal) uses the floating dock.
+    DOCKED = True
 
     def _dock_width(self):
-        return self.DOCK_WIDTH if self.app.look.lumina else 100000
+        return self.DOCK_WIDTH if self.DOCKED else 100000
 
     def _apply_dock(self):
-        """Lumina on: centred floating dock (outside fullscreen, which has its own)."""
-        dock = self.app.look.lumina
+        """Centred floating dock (outside fullscreen, which has its own)."""
+        dock = self.DOCKED
         if dock:
             self.controls.add_css_class("dock")
         else:

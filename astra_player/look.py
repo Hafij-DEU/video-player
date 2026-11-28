@@ -32,8 +32,14 @@ toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shad
 /* Lumina dock: a smaller floating glass pill, centred (width set by the window),
    floating on the same black as the video */
 toolbarview > .bottom-bar {{ background-color: #000000; }}
-.controls.dock {{ margin: 10px 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: {L_RIM};
+.controls.dock {{ margin: 10px 12px 14px; border-radius: 22px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 14px 30px -14px rgba(0,0,0,0.65); }}
+/* fullscreen: no black strip under the dock, the video runs to the edge */
+toolbarview.fs > .bottom-bar {{ background-color: transparent; }}
+/* windowed dock as roomy as the fullscreen panel */
+.controls.dock {{ padding: 8px 18px 12px; }}
+.controls.dock button.ctl {{ min-width: 38px; min-height: 38px; }}
+.controls.dock .transport button.play {{ min-width: 54px; min-height: 54px; }}
 .controls.fs {{ {L_GLASS} margin: 0 14px 14px; border-radius: 18px; border: {L_RIM};
   box-shadow: {L_EDGE}, 0 16px 34px -14px rgba(0,0,0,0.65); }}
 .controls .time {{ color: #aaa7c8; }}
@@ -105,8 +111,14 @@ toolbarview > .bottom-bar {{ margin: 0; border-radius: 0; border: none; box-shad
 headerbar {{ {bar} box-shadow: inset 0 -1px {rim}; }}
 headerbar .title, headerbar label.title, headerbar button {{ color: {text}; }}
 .controls {{ {bar} border-top: 1px solid {rim}; box-shadow: inset 0 1px {edge}; }}
-.controls.dock {{ margin: 10px 12px 12px; padding: 2px 12px 4px; border-radius: 22px; border: 1px solid {rim};
+.controls.dock {{ margin: 10px 12px 14px; border-radius: 22px; border: 1px solid {rim};
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; {dock} }}
+/* fullscreen: no black strip under the dock, the video runs to the edge */
+toolbarview.fs > .bottom-bar {{ background-color: transparent; }}
+/* windowed dock as roomy as the fullscreen panel */
+.controls.dock {{ padding: 8px 18px 12px; }}
+.controls.dock button.ctl {{ min-width: 38px; min-height: 38px; }}
+.controls.dock .transport button.play {{ min-width: 54px; min-height: 54px; }}
 .controls.fs {{ {bar} margin: 0 14px 14px; border-radius: 18px; border: 1px solid {rim};
   box-shadow: inset 0 1px {edge}, 0 14px 30px -14px {shadow}; }}
 .controls button.ctl, .controls.fs button.ctl {{ color: {text}; }}
@@ -148,6 +160,52 @@ headerbar.fs, headerbar.fs .header-extras button {{ color: {text}; }}
 .clock {{ color: {text}; }}
 """
 
+
+
+# ---- The other Harbor glass presets in Astra (dark player) -------------------
+
+def preset_css(spec):
+    """Harbor Settings' other glass styles (CLEAR, FROSTED, GEL, TINTED, SMOKE,
+    HALO, GLOW) on Astra's glass parts: the dock, the fullscreen panel, the
+    header, the playlist and the OSD. Effect SOFT = flat glass, STRONG = sheen;
+    opacity and rim come from the same spec."""
+    style = spec.get("style", "FROSTED")
+    soft = spec.get("effect") == "SOFT"
+    a = max(0.2, spec.get("opacity", 75) / 100)
+    if style == "CLEAR":
+        a *= 0.7
+    if soft:
+        a = 0.5 + a * 0.5
+    acc = "var(--accent-bg-color)"
+    base = {"CLEAR": (24, 24, 30), "FROSTED": (58, 58, 68), "GEL": (34, 34, 44),
+            "TINTED": (30, 26, 20), "SMOKE": (8, 8, 10), "HALO": (22, 22, 28),
+            "GLOW": (26, 24, 30)}.get(style, (40, 40, 48))
+    bg = "background-color: rgba(%d,%d,%d,%.2f);" % (*base, min(0.96, a))
+    sheen = {"CLEAR": 0.05, "FROSTED": 0.12, "GEL": 0.22, "TINTED": 0.08, "SMOKE": 0.04,
+             "HALO": 0.07, "GLOW": 0.08}.get(style, 0.08)
+    img = "none" if soft else (
+        "linear-gradient(to bottom, rgba(255,255,255,%.2f), rgba(255,255,255,0.0) %s)"
+        % (sheen, "48%" if style == "GEL" else "65%"))
+    if style == "TINTED":
+        img = ("linear-gradient(alpha(%s,0.14), alpha(%s,0.14))" % (acc, acc)
+               + ("" if soft else ", " + img))
+    if style == "GLOW":
+        img = ("radial-gradient(ellipse at 50%% 120%%, alpha(%s,0.38), transparent 70%%)" % acc
+               + ("" if soft else ", " + img))
+    rim = "1px solid rgba(255,255,255,%.2f)" % ((0.14 if not soft else 0.08) if spec.get("rim", True) else 0.0)
+    shadow = "0 14px 30px -14px rgba(0,0,0,%.2f)" % (0.35 if soft else 0.65)
+    if style == "HALO":
+        shadow = "0 0 0 1px alpha(%s,0.45), 0 0 18px -2px alpha(%s,0.35), %s" % (acc, acc, shadow)
+    if style == "GEL" and not soft:
+        shadow = "inset 0 1px rgba(255,255,255,0.30), inset 0 -1px rgba(0,0,0,0.30), " + shadow
+    glass = f"{bg} background-image: {img};"
+    return f"""
+.controls.dock, .controls.fs {{ {glass} border: {rim}; box-shadow: {shadow}; }}
+headerbar, headerbar.fs {{ {glass} box-shadow: inset 0 -1px rgba(255,255,255,0.08); }}
+.playlist-panel {{ {glass} border-left: {rim}; }}
+.osd {{ {glass} border: {rim}; border-radius: 14px; }}
+.controls.fs button.ctl {{ color: #ffffff; }}
+"""
 
 def load_mode():
     try:
@@ -229,6 +287,8 @@ class AstraLook:
             css = self.look.css_gtk4(True)
             if css:
                 css += LUMINA_CSS
+            elif spec.get("effect") != "OFF" and spec.get("style") != "PLANNER":
+                css = preset_css(spec)  # the other Harbor presets
         self.provider.load_from_string(css)
         for cb in self.listeners:
             cb()
